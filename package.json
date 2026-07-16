@@ -1,0 +1,42 @@
+{
+  "name": "zephyr-scale-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Zephyr Scale (Jira Server / Data Center) REST API v1",
+  "type": "module",
+  "bin": {
+    "zephyr-scale-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "ZEPHYR_E2E=1 vitest run test/smoke.e2e.test.ts"
+  },
+  "keywords": [
+    "mcp",
+    "zephyr-scale",
+    "tm4j",
+    "jira",
+    "testing"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "msw": "^2.15.0",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
