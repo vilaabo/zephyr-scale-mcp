@@ -75,7 +75,7 @@ export function registerTestCaseTools(server: McpServer, cfg: Config): void {
   defineTool(server, cfg, {
     name: 'create_test_case',
     description:
-      "Create a Zephyr Scale test case (POST /testcase). Returns { key, url } with a key like PROJ-T123. Constraints: the folder, if given, MUST already exist — the API never creates folders (use create_folder first); status and priority are case-sensitive internal names (defaults 'Draft'/'Approved'/'Deprecated' and 'High'/'Normal'/'Low'; instances may define custom ones); owner is a Jira user key like JIRAUSER10000 (resolve with find_jira_user); estimatedTime is in milliseconds. testScript formats: STEP_BY_STEP with steps (a step carrying testCaseKey is a 'Call to Test' that inlines another test case), PLAIN_TEXT with text, or BDD with text holding the full Gherkin document (stored verbatim).",
+      "Create a Zephyr Scale test case (POST /testcase). Returns { key, url } with a key like PROJ-T123. Constraints: the folder, if given, MUST already exist — the API never creates folders (use create_folder first); status and priority are case-sensitive internal names (defaults 'Draft'/'Approved'/'Deprecated' and 'High'/'Normal'/'Low'; instances may define custom ones); owner is a Jira user key like JIRAUSER10000 (resolve with find_jira_user); estimatedTime is in milliseconds. testScript formats: STEP_BY_STEP with steps (a step carrying testCaseKey is a 'Call to Test' that inlines another test case), PLAIN_TEXT with text, or BDD with text holding ONLY Gherkin step lines (Given/When/Then/And/But, stored verbatim) — do NOT include 'Feature:'/'Scenario:' headers, the API rejects them with 400 'Invalid BDD Script'.",
     inputSchema: {
       projectKey: projectKeySchema,
       ...testCaseFieldsShape,
@@ -207,11 +207,16 @@ Note: queries longer than 1500 characters (typically large IN lists) are automat
   defineTool(server, cfg, {
     name: 'set_test_script',
     description:
-      "Replace a test case's ENTIRE script or change its format (PUT /testcase/{testCaseKey} with a full testScript). WARNING — destructive: switching a STEP_BY_STEP script to PLAIN_TEXT or BDD irreversibly deletes all existing steps, and a STEP_BY_STEP replacement deletes every existing step omitted from the list. Pass text for PLAIN_TEXT/BDD (for BDD the full Gherkin document, stored verbatim); pass steps for STEP_BY_STEP. Returns { key, url }.",
+      "Replace a test case's ENTIRE script or change its format (PUT /testcase/{testCaseKey} with a full testScript). WARNING — destructive: switching a STEP_BY_STEP script to PLAIN_TEXT or BDD irreversibly deletes all existing steps, and a STEP_BY_STEP replacement deletes every existing step omitted from the list. Pass text for PLAIN_TEXT/BDD (for BDD only Gherkin step lines Given/When/Then/And/But, stored verbatim — no 'Feature:'/'Scenario:' headers, the API rejects them); pass steps for STEP_BY_STEP. Returns { key, url }.",
     inputSchema: {
       testCaseKey: testCaseKeySchema,
       type: testScriptTypeSchema.describe('New script format'),
-      text: z.string().optional().describe('Script body — required for PLAIN_TEXT and BDD (full Gherkin document), not allowed for STEP_BY_STEP'),
+      text: z
+        .string()
+        .optional()
+        .describe(
+          'Script body — required for PLAIN_TEXT and BDD (Gherkin step lines only, no Feature:/Scenario: headers), not allowed for STEP_BY_STEP',
+        ),
       steps: z
         .array(stepSchema)
         .optional()

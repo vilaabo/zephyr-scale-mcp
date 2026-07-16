@@ -53,7 +53,12 @@ function validateScriptShape(
 export const testScriptSchema = z
   .object({
     type: testScriptTypeSchema.describe('Script format'),
-    text: z.string().optional().describe('Script body for PLAIN_TEXT, or the full Gherkin document for BDD'),
+    text: z
+      .string()
+      .optional()
+      .describe(
+        'Script body for PLAIN_TEXT, or the Gherkin scenario body for BDD: ONLY Given/When/Then/And/But step lines — Server/DC rejects texts wrapped in "Feature:"/"Scenario:" headers with 400 "Invalid BDD Script" (a BDD test case IS a single scenario; the feature wrapper is generated on export).',
+      ),
     steps: z.array(stepSchema).optional().describe('Steps for STEP_BY_STEP'),
   })
   .strict()

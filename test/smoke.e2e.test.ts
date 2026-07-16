@@ -25,7 +25,9 @@ describe.runIf(enabled)('smoke: full Zephyr Scale round-trip', () => {
   let bddCaseKey: string;
   let runKey: string;
 
-  const gherkin = 'Feature: Авторизация\n\nScenario: Успешный вход\n  Given открыта страница логина\n  When пользователь вводит валидные креды\n  Then открывается дашборд';
+  // BDD scripts are the scenario body only — Server/DC rejects Feature:/Scenario: headers
+  // with 400 "Invalid BDD Script" (verified live; see README, "Известные расхождения").
+  const gherkin = 'Given открыта страница логина\nWhen пользователь вводит валидные креды\nThen открывается дашборд';
 
   beforeAll(async () => {
     if (!cfg?.defaultProjectKey) {
