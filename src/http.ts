@@ -24,6 +24,7 @@ export interface ZephyrFetchOptions {
 
 export class ZephyrApiError extends Error {
   override name = 'ZephyrApiError';
+  readonly hint: string | undefined;
 
   constructor(
     readonly status: number,
@@ -34,7 +35,16 @@ export class ZephyrApiError extends Error {
   ) {
     // Per spec: method and path (no query string — it may contain sensitive data), body cut to 2 KB.
     super(`Zephyr API error ${status} (${method} ${path}): ${responseBody}${hint ? `\nHint: ${hint}` : ''}`);
+    this.hint = hint;
   }
+}
+
+/** Append a tool-specific hint to an API error; other error kinds pass through unchanged. */
+export function addHint(err: unknown, extra: string): unknown {
+  if (err instanceof ZephyrApiError) {
+    return new ZephyrApiError(err.status, err.method, err.path, err.responseBody, err.hint ? `${err.hint}\n${extra}` : extra);
+  }
+  return err;
 }
 
 export class NetworkError extends Error {
