@@ -10,9 +10,13 @@ MCP-сервер (Model Context Protocol) для **Zephyr Scale** на self-host
 |---|---|
 | Тест-кейсы | `create_test_case`, `get_test_case`, `search_test_cases` (TQL, GET/POST), `update_test_case`, `add_test_steps`, `set_test_script`, `delete_test_case`, `create_test_cases_bulk`, `link_issues_to_test_cases`, `get_test_cases_linked_to_issue` |
 | Папки | `create_folder` (с рекурсивным созданием цепочки), `rename_folder` |
-| Тест-циклы | `create_test_run` (с items и результатами), `get_test_run`, `search_test_runs`, `delete_test_run`, `get_test_run_results` (постранично) |
+| Тест-циклы | `create_test_run` (с items и результатами), `get_test_run`, `search_test_runs`, `delete_test_run`, `get_test_run_results` (постранично), `recreate_test_run_with_items` (обход неизменяемости циклов) |
 | Результаты | `create_test_result`, `update_last_test_result`, `create_test_results_bulk`, `get_latest_result_for_test_case` |
+| Тест-планы | `create_test_plan`, `get_test_plan`, `update_test_plan`, `delete_test_plan`, `search_test_plans` |
+| Вложения | `upload_attachment`, `list_attachments`, `delete_attachment` (кейс / шаг кейса / цикл / результат / шаг результата, multipart) |
+| Автоматизация | `upload_automation_results`, `upload_cucumber_results` (zip), `download_feature_files` (zip с .feature) |
 | Сервисные | `list_environments`, `create_environment`, `find_jira_user`, `health_check` |
+| UNOFFICIAL | `get_folder_tree` — листинг дерева папок через internal API; регистрируется только при `ZEPHYR_ALLOW_INTERNAL_API=true` |
 
 Поддерживаются все три формата скриптов тест-кейсов: **STEP_BY_STEP**, **PLAIN_TEXT**, **BDD (Gherkin)**, включая шаги Call to Test (`steps[].testCaseKey`) и параметры (§`parameters`).
 
@@ -44,6 +48,7 @@ npm run build        # → dist/index.js
 | `JIRA_TLS_REJECT_UNAUTHORIZED` | нет | `true` | `false` разрешает самоподписанные сертификаты (отключает проверку TLS **для всех** запросов процесса; в stderr выводится предупреждение) |
 | `ZEPHYR_DEFAULT_PROJECT_KEY` | нет | — | Подставляется, если инструмент вызван без `projectKey` |
 | `ZEPHYR_READONLY` | нет | `false` | При `true` инструменты записи возвращают ошибку |
+| `ZEPHYR_ALLOW_INTERNAL_API` | нет | `false` | При `true` регистрируются UNOFFICIAL-инструменты на базе internal API `/rest/tests/1.0` (вендором не поддерживается — риски на пользователе) |
 | `ZEPHYR_LOG_LEVEL` | нет | `info` | `debug` \| `info` \| `warn` \| `error` (весь лог — в stderr) |
 
 Секреты (`JIRA_PAT`, `JIRA_PASSWORD`) не пишутся в логи и не попадают в ответы инструментов и тексты ошибок.
@@ -159,6 +164,10 @@ src/
 test/               # unit + contract (msw) + smoke.e2e
 ```
 
-## Фаза 3 (не реализовано, по отдельному запросу)
+## Фаза 3 (§7.6) — реализовано
 
-Вложения, CRUD тест-планов, эндпоинты автоматизации, обход неизменяемости циклов (`recreate_test_run_with_items`), internal API за флагом — см. §7.6 ТЗ.
+- **Вложения**: `upload_attachment` / `list_attachments` / `delete_attachment`. Единая адресация: `target` = `test_case` | `test_run` | `test_result` (+ опциональный `stepIndex` для кейса и результата). Загрузка — multipart, файл читается с диска машины, где запущен MCP-сервер.
+- **Тест-планы**: полный CRUD + `search_test_plans` (TQL).
+- **Автоматизация**: `upload_automation_results` (zip с результатами в формате Zephyr), `upload_cucumber_results` (zip с Cucumber JSON), опционально `autoCreateTestCases`; `download_feature_files` выгружает zip с `.feature`-файлами BDD-кейсов в локальный файл.
+- **`recreate_test_run_with_items`** — обход неизменяемости циклов: читает исходный цикл, создаёт новый с изменённым составом (`addItems` / `removeTestCaseKeys`), заголовочные поля наследуются от исходного; `copyResults: true` переносит последние результаты item'ов (включая пошаговые `scriptResults`); исходный цикл удаляется **только** при явном `deleteOriginal: true` и никогда — если создание нового не удалось. Новый цикл получает **новый ключ**.
+- **Internal API** (за флагом `ZEPHYR_ALLOW_INTERNAL_API=true`): `get_folder_tree` — дерево папок проекта (`/rest/tests/1.0/project/{id}/foldertree/...`). Помечен `UNOFFICIAL`: вендор internal API не поддерживает, на другой версии плагина эндпоинт может отсутствовать или отличаться.
