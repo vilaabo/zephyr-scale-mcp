@@ -136,13 +136,41 @@ describe('test run tools: API error propagation', () => {
     });
   });
 
-  it('get_test_run_results surfaces a 404 instead of fabricating an empty page', async () => {
-    mock.use(http.get(`${BASE_URL}/rest/atm/1.0/testrun/PROJ-R404/testresults/page`, error404));
+  it('get_test_run_results surfaces a 404 for a missing run instead of fabricating an empty page', async () => {
+    // Both the paginated endpoint and the flat fallback answer 404 — the run does not exist.
+    mock.use(
+      http.get(`${BASE_URL}/rest/atm/1.0/testrun/PROJ-R404/testresults/page`, error404),
+      http.get(`${BASE_URL}/rest/atm/1.0/testrun/PROJ-R404/testresults`, error404),
+    );
     await withClient(async (t) => {
       const res = await t.call('get_test_run_results', { testRunKey: 'PROJ-R404' });
       expect(res.isError).toBe(true);
-      expect(res.text).toContain('Zephyr API error 404 (GET /rest/atm/1.0/testrun/PROJ-R404/testresults/page)');
+      expect(res.text).toContain('Zephyr API error 404 (GET /rest/atm/1.0/testrun/PROJ-R404/testresults)');
       expect(res.text).not.toContain('"values"');
+    });
+  });
+
+  it('get_test_run_results falls back to the flat endpoint when /page is missing (older Zephyr versions)', async () => {
+    const flatResults = [
+      { id: 1, testCaseKey: 'PROJ-T1', status: 'Fail' },
+      { id: 2, testCaseKey: 'PROJ-T1', status: 'Pass' },
+      { id: 3, testCaseKey: 'PROJ-T2', status: 'Pass' },
+    ];
+    mock.use(
+      http.get(`${BASE_URL}/rest/atm/1.0/testrun/PROJ-R1/testresults/page`, error404),
+      http.get(`${BASE_URL}/rest/atm/1.0/testrun/PROJ-R1/testresults`, () => HttpResponse.json(flatResults)),
+    );
+    await withClient(async (t) => {
+      const paged = await t.call('get_test_run_results', { testRunKey: 'PROJ-R1', maxResults: 2 });
+      expect(paged.isError).toBe(false);
+      expect(paged.json).toMatchObject({ startAt: 0, maxResults: 2, total: 3, count: 2, isLast: false });
+      expect(paged.json.note).toMatch(/flat endpoint/);
+      expect(paged.json.values.map((v: { id: number }) => v.id)).toEqual([1, 2]);
+
+      const last = await t.call('get_test_run_results', { testRunKey: 'PROJ-R1', onlyLastExecutions: true });
+      expect(last.isError).toBe(false);
+      expect(last.json.total).toBe(2);
+      expect(last.json.values.map((v: { id: number }) => v.id)).toEqual([2, 3]);
     });
   });
 });
