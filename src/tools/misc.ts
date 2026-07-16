@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Config } from '../config.js';
-import { atm, zephyrFetch } from '../http.js';
+import { atm, zephyrFetch, ZephyrApiError } from '../http.js';
 import { compact, defineTool, resolveProjectKey } from '../toolkit.js';
 
 export function registerMiscTools(server: McpServer, cfg: Config): void {
@@ -52,12 +52,15 @@ export function registerMiscTools(server: McpServer, cfg: Config): void {
     },
     annotations: { readOnlyHint: true },
     handler: async (args, { cfg }) => {
-      const users = (await zephyrFetch(cfg, {
+      const users = await zephyrFetch(cfg, {
         method: 'GET',
         path: '/rest/api/2/user/search',
         query: { username: args.query, maxResults: args.maxResults },
-      })) as Array<Record<string, unknown>>;
-      return users.map((u) => ({
+      });
+      if (!Array.isArray(users)) {
+        throw new Error(`Unexpected response from Jira user search (expected an array): ${JSON.stringify(users).slice(0, 300)}`);
+      }
+      return (users as Array<Record<string, unknown>>).map((u) => ({
         key: u.key,
         name: u.name,
         displayName: u.displayName,
@@ -83,8 +86,10 @@ export function registerMiscTools(server: McpServer, cfg: Config): void {
             query: { projectKey: cfg.defaultProjectKey },
           });
           zephyrPluginReachable = true;
-        } catch {
-          zephyrPluginReachable = false;
+        } catch (err) {
+          // A JSON API error (400/403/404 from the plugin itself) still proves the plugin answered
+          // at /rest/atm/1.0; only network failures and Jira's generic HTML 404 mean it is unreachable.
+          zephyrPluginReachable = err instanceof ZephyrApiError && !(err.status === 404 && err.htmlBody);
         }
       }
       return compact({

@@ -32,6 +32,8 @@ export class ZephyrApiError extends Error {
     readonly path: string,
     readonly responseBody: string,
     hint?: string,
+    /** True when the response was an HTML page instead of JSON (e.g. Jira served a generic 404 page). */
+    readonly htmlBody: boolean = false,
   ) {
     // Per spec: method and path (no query string — it may contain sensitive data), body cut to 2 KB.
     super(`Zephyr API error ${status} (${method} ${path}): ${responseBody}${hint ? `\nHint: ${hint}` : ''}`);
@@ -42,7 +44,14 @@ export class ZephyrApiError extends Error {
 /** Append a tool-specific hint to an API error; other error kinds pass through unchanged. */
 export function addHint(err: unknown, extra: string): unknown {
   if (err instanceof ZephyrApiError) {
-    return new ZephyrApiError(err.status, err.method, err.path, err.responseBody, err.hint ? `${err.hint}\n${extra}` : extra);
+    return new ZephyrApiError(
+      err.status,
+      err.method,
+      err.path,
+      err.responseBody,
+      err.hint ? `${err.hint}\n${extra}` : extra,
+      err.htmlBody,
+    );
   }
   return err;
 }
@@ -112,7 +121,7 @@ async function toApiError(res: Response, opts: ZephyrFetchOptions): Promise<Zeph
   const contentType = res.headers.get('content-type') ?? '';
   const looksLikeHtml = contentType.includes('html') || /^\s*</.test(bodyText);
   const body = truncate(bodyText.trim()) || res.statusText || '(empty response body)';
-  return new ZephyrApiError(res.status, opts.method, opts.path, body, buildHint(res.status, opts.path, bodyText, looksLikeHtml));
+  return new ZephyrApiError(res.status, opts.method, opts.path, body, buildHint(res.status, opts.path, bodyText, looksLikeHtml), looksLikeHtml);
 }
 
 async function parseSuccess(res: Response): Promise<unknown> {

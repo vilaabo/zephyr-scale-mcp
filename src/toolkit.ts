@@ -79,7 +79,8 @@ export function defineTool<S extends ZodRawShape>(server: McpServer, cfg: Config
         const data = await spec.handler(args, { cfg });
         return textResult(scrubSecrets(cfg, JSON.stringify(data ?? null, null, 2)));
       } catch (err) {
-        log('debug', `tool ${spec.name} failed: ${err instanceof Error ? err.message : String(err)}`);
+        // §5: secrets must never reach logs either — scrub before logging, same as for the client.
+        log('debug', scrubSecrets(cfg, `tool ${spec.name} failed: ${err instanceof Error ? err.message : String(err)}`));
         return textResult(scrubSecrets(cfg, errorText(err)), true);
       }
     },
