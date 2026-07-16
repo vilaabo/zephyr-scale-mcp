@@ -14,6 +14,8 @@ export interface Config {
   tlsRejectUnauthorized: boolean;
   defaultProjectKey?: string;
   readonly: boolean;
+  /** Enables UNOFFICIAL tools backed by the internal /rest/tests/1.0 API (§7.6); off by default. */
+  allowInternalApi: boolean;
   logLevel: LogLevel;
 }
 
@@ -79,6 +81,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const maxRetries = parseInteger('JIRA_MAX_RETRIES', env.JIRA_MAX_RETRIES, 2, 0, errors);
   const tlsRejectUnauthorized = parseBoolean('JIRA_TLS_REJECT_UNAUTHORIZED', env.JIRA_TLS_REJECT_UNAUTHORIZED, true, errors);
   const readonly = parseBoolean('ZEPHYR_READONLY', env.ZEPHYR_READONLY, false, errors);
+  const allowInternalApi = parseBoolean('ZEPHYR_ALLOW_INTERNAL_API', env.ZEPHYR_ALLOW_INTERNAL_API, false, errors);
 
   const logLevel = (env.ZEPHYR_LOG_LEVEL?.trim() || 'info') as LogLevel;
   if (!LOG_LEVELS.includes(logLevel)) {
@@ -105,6 +108,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     retryBaseDelayMs: 500,
     tlsRejectUnauthorized,
     readonly,
+    allowInternalApi,
     logLevel,
   };
   if (pat) config.pat = pat;

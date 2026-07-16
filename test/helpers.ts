@@ -17,6 +17,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     retryBaseDelayMs: 1,
     tlsRejectUnauthorized: true,
     readonly: false,
+    allowInternalApi: false,
     logLevel: 'error',
     ...overrides,
   };

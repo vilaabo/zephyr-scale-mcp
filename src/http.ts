@@ -18,8 +18,12 @@ export interface ZephyrFetchOptions {
   path: string;
   /** Query parameters; entries with undefined values are omitted. */
   query?: Record<string, string | number | boolean | undefined>;
-  /** JSON body; omitted entirely when undefined. */
+  /** JSON body; omitted entirely when undefined. Mutually exclusive with form. */
   body?: unknown;
+  /** multipart/form-data body (attachments, automation zips); fetch sets the boundary itself. */
+  form?: FormData;
+  /** Return the raw response bytes as a Buffer instead of parsing JSON (zip downloads). */
+  binaryResponse?: boolean;
 }
 
 export class ZephyrApiError extends Error {
@@ -124,8 +128,9 @@ async function toApiError(res: Response, opts: ZephyrFetchOptions): Promise<Zeph
   return new ZephyrApiError(res.status, opts.method, opts.path, body, buildHint(res.status, opts.path, bodyText, looksLikeHtml), looksLikeHtml);
 }
 
-async function parseSuccess(res: Response): Promise<unknown> {
+async function parseSuccess(res: Response, binary: boolean): Promise<unknown> {
   if (res.status === 204 || res.status === 205) return {};
+  if (binary) return Buffer.from(await res.arrayBuffer());
   const text = await res.text();
   if (text.trim() === '') return {};
   try {
@@ -157,10 +162,11 @@ export async function zephyrFetch(cfg: Config, opts: ZephyrFetchOptions): Promis
         method: opts.method,
         headers: {
           Authorization: authHeader(cfg),
-          Accept: 'application/json',
+          Accept: opts.binaryResponse ? '*/*' : 'application/json',
+          // For form bodies fetch sets multipart/form-data with the boundary itself.
           ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
-        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+        body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
         signal: AbortSignal.timeout(cfg.timeoutMs),
       });
     } catch (cause) {
@@ -178,7 +184,7 @@ export async function zephyrFetch(cfg: Config, opts: ZephyrFetchOptions): Promis
       throw new NetworkError(`Network error (${opts.method} ${opts.path}): ${reason}`);
     }
 
-    if (res.ok) return parseSuccess(res);
+    if (res.ok) return parseSuccess(res, opts.binaryResponse === true);
 
     const retryable = res.status === 429 || res.status === 503 || (opts.method === 'GET' && res.status >= 500);
     if (retryable && !isLastAttempt) {

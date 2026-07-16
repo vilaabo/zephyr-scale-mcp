@@ -1,7 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Config } from '../config.js';
-import { atm, zephyrFetch, ZephyrApiError } from '../http.js';
+import { atm, zephyrFetch } from '../http.js';
+import { fetchRunResultsPage } from '../runResults.js';
 import { customFieldsSchema, maxResultsSchema, startAtSchema, testResultFieldsShape, USER_KEY_NOTE } from '../schemas.js';
 import { compact, defineTool, fieldsParam, pageEnvelope, resolveProjectKey } from '../toolkit.js';
 
@@ -162,45 +163,19 @@ export function registerTestRunTools(server: McpServer, cfg: Config): void {
     handler: async (args, { cfg }) => {
       const startAt = args.startAt ?? 0;
       const maxResults = args.maxResults ?? 50;
-      const runPath = `/testrun/${encodeURIComponent(args.testRunKey)}`;
-      let res: { total: number; values?: unknown[] };
-      let note: string | undefined;
-      try {
-        res = (await zephyrFetch(cfg, {
-          method: 'GET',
-          path: atm(`${runPath}/testresults/page`),
-          query: { startAt, maxResults, onlyLastExecutions: args.onlyLastExecutions },
-        })) as { total: number; values?: unknown[] };
-      } catch (err) {
-        // Older Zephyr Scale Server versions have no /page endpoint (404 for ANY run key).
-        // Fall back to the deprecated flat endpoint and paginate client-side. A run that
-        // genuinely does not exist makes the flat call 404 too, so real errors still surface.
-        if (!(err instanceof ZephyrApiError) || err.status !== 404) throw err;
-        const flat = await zephyrFetch(cfg, { method: 'GET', path: atm(`${runPath}/testresults`) });
-        if (!Array.isArray(flat)) throw err;
-        let all = flat as Array<Record<string, unknown>>;
-        if (args.onlyLastExecutions) {
-          // Best-effort emulation: keep the newest (highest id) execution per test case.
-          const latest = new Map<unknown, Record<string, unknown>>();
-          for (const r of all) {
-            const prev = latest.get(r.testCaseKey);
-            if (!prev || Number(r.id ?? 0) >= Number(prev.id ?? 0)) latest.set(r.testCaseKey, r);
-          }
-          all = [...latest.values()];
-        }
-        res = { total: all.length, values: all.slice(startAt, startAt + maxResults) };
-        note =
-          'The paginated /testresults/page endpoint is unavailable on this Zephyr Scale version; results were read from the deprecated flat endpoint and paginated client-side.';
-      }
-      const values = res.values ?? [];
+      const page = await fetchRunResultsPage(cfg, args.testRunKey, {
+        startAt,
+        maxResults,
+        onlyLastExecutions: args.onlyLastExecutions,
+      });
       return compact({
         startAt,
         maxResults,
-        total: res.total,
-        count: values.length,
-        isLast: startAt + values.length >= res.total,
-        note,
-        values,
+        total: page.total,
+        count: page.values.length,
+        isLast: startAt + page.values.length >= page.total,
+        note: page.note,
+        values: page.values,
       });
     },
   });
