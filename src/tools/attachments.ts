@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { z } from 'zod';
 import type { Config } from '../config.js';
@@ -126,6 +126,45 @@ export function registerAttachmentTools(server: McpServer, cfg: Config): void {
     inputSchema: { ...addressingShape },
     annotations: { readOnlyHint: true },
     handler: async (args, { cfg }) => zephyrFetch(cfg, { method: 'GET', path: attachmentsPath(args) }),
+  });
+
+  defineTool(server, cfg, {
+    name: 'download_attachment',
+    description:
+      'Download a Zephyr Scale attachment to a local file. Address it either by attachmentId (from list_attachments or an upload ' +
+      'response) or by the exact `url` field that list_attachments returns — pass exactly one of the two. ' +
+      'Note: Zephyr Scale serves attachment content from /rest/tests/1.0/attachment/{id}; that is the URL the official list ' +
+      'endpoint itself hands out, so this tool follows it. For safety, a passed url must point at the configured Jira host — ' +
+      'credentials are never sent elsewhere. The file is written to outputPath on the machine running this MCP server ' +
+      '(the parent directory must exist). Returns { savedTo, bytes }.',
+    inputSchema: {
+      attachmentId: z.number().int().optional().describe('Numeric attachment id (from list_attachments or an upload response)'),
+      url: z
+        .string()
+        .optional()
+        .describe('Exact download url as returned by list_attachments; must be on the configured Jira host'),
+      outputPath: z.string().describe('Local path to write the file to (the parent directory must exist)'),
+    },
+    annotations: { readOnlyHint: true },
+    handler: async (args, { cfg }) => {
+      if ((args.attachmentId === undefined) === (args.url === undefined)) {
+        throw new ToolInputError('Pass exactly ONE of attachmentId or url.');
+      }
+      let path: string;
+      if (args.url !== undefined) {
+        if (!args.url.startsWith(`${cfg.baseUrl}/`)) {
+          throw new ToolInputError(
+            `url must point at the configured Jira host (${cfg.baseUrl}) — refusing to send credentials to another host.`,
+          );
+        }
+        path = args.url.slice(cfg.baseUrl.length);
+      } else {
+        path = `/rest/tests/1.0/attachment/${args.attachmentId}`;
+      }
+      const buf = (await zephyrFetch(cfg, { method: 'GET', path, binaryResponse: true })) as Buffer;
+      await writeFile(args.outputPath, buf);
+      return { savedTo: args.outputPath, bytes: buf.length };
+    },
   });
 
   defineTool(server, cfg, {

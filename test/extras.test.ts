@@ -278,3 +278,79 @@ describe('get_status_options (UNOFFICIAL, gated)', () => {
     await t.close();
   });
 });
+
+describe('download_attachment', () => {
+  const bytes = Buffer.from('attachment-bytes-éé');
+
+  it('downloads by attachmentId to the local path', async () => {
+    const { mkdtemp, readFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'zephyr-dl-'));
+    mock.use(
+      http.get(`${BASE_URL}/rest/tests/1.0/attachment/54975`, () =>
+        HttpResponse.arrayBuffer(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer),
+      ),
+    );
+    const t = await createTestClient();
+    const out = join(dir, 'file.txt');
+    const res = await t.call('download_attachment', { attachmentId: 54975, outputPath: out });
+    expect(res.isError).toBe(false);
+    expect(res.json).toEqual({ savedTo: out, bytes: bytes.length });
+    expect((await readFile(out)).equals(bytes)).toBe(true);
+    await rm(dir, { recursive: true, force: true });
+    await t.close();
+  });
+
+  it('accepts a same-origin url from list_attachments and rejects foreign hosts without any HTTP call', async () => {
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'zephyr-dl-'));
+    let requests = 0;
+    mock.use(
+      http.get(`${BASE_URL}/rest/tests/1.0/attachment/1`, () => {
+        requests++;
+        return HttpResponse.arrayBuffer(new ArrayBuffer(4));
+      }),
+    );
+    const t = await createTestClient();
+    const ok = await t.call('download_attachment', { url: `${BASE_URL}/rest/tests/1.0/attachment/1`, outputPath: join(dir, 'a.bin') });
+    expect(ok.isError).toBe(false);
+    const foreign = await t.call('download_attachment', {
+      url: 'https://evil.example.com/rest/tests/1.0/attachment/1',
+      outputPath: join(dir, 'b.bin'),
+    });
+    expect(foreign.isError).toBe(true);
+    expect(foreign.text).toContain('configured Jira host');
+    expect(requests).toBe(1);
+    await rm(dir, { recursive: true, force: true });
+    await t.close();
+  });
+
+  it('requires exactly one of attachmentId or url', async () => {
+    const t = await createTestClient();
+    const neither = await t.call('download_attachment', { outputPath: '/tmp/x.bin' });
+    expect(neither.isError).toBe(true);
+    expect(neither.text).toContain('exactly ONE');
+    const both = await t.call('download_attachment', {
+      attachmentId: 1,
+      url: `${BASE_URL}/rest/tests/1.0/attachment/1`,
+      outputPath: '/tmp/x.bin',
+    });
+    expect(both.isError).toBe(true);
+    await t.close();
+  });
+
+  it('propagates a 404 and writes no file', async () => {
+    const { access } = await import('node:fs/promises');
+    mock.use(http.get(`${BASE_URL}/rest/tests/1.0/attachment/999`, () => new HttpResponse('', { status: 404 })));
+    const t = await createTestClient();
+    const out = '/tmp/zephyr-dl-never-written.bin';
+    const res = await t.call('download_attachment', { attachmentId: 999, outputPath: out });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('404');
+    await expect(access(out)).rejects.toThrow();
+    await t.close();
+  });
+});
