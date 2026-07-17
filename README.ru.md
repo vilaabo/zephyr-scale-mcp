@@ -70,7 +70,8 @@ npm run build        # → dist/index.js
         "JIRA_BASE_URL": "https://jira.example.com",
         "JIRA_AUTH": "pat",
         "JIRA_PAT": "<personal access token>",
-        "ZEPHYR_DEFAULT_PROJECT_KEY": "PROJ"
+        "ZEPHYR_DEFAULT_PROJECT_KEY": "PROJ",
+        "ZEPHYR_ALLOW_INTERNAL_API": "true"
       }
     }
   }
@@ -84,10 +85,13 @@ claude mcp add zephyr-scale \
   --env JIRA_BASE_URL=https://jira.example.com \
   --env JIRA_PAT=<token> \
   --env ZEPHYR_DEFAULT_PROJECT_KEY=PROJ \
+  --env ZEPHYR_ALLOW_INTERNAL_API=true \
   -- node /path/to/zephyr-scale-mcp/dist/index.js
 ```
 
 Проверка: попросите агента вызвать `health_check` — он должен вернуть `{ ok: true, jiraUser, baseUrl, zephyrPluginReachable }`.
+
+> 💡 **`ZEPHYR_ALLOW_INTERNAL_API=true` — опционально, но настоятельно рекомендуется.** Флаг открывает то, чего публичный API не умеет в принципе: листинг всего дерева папок (`get_folder_tree`), удаление папок (`delete_folder`) и точные внутренние имена статусов/приоритетов, которые API молча ожидает (`get_status_options`). Эти инструменты ходят на те же internal-эндпоинты, что и сам UI Jira, но вендором они не поддерживаются — уберите флаг, если такой компромисс не подходит.
 
 ## Примеры
 

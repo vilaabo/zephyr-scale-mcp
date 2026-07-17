@@ -36,6 +36,7 @@ claude mcp add zephyr-scale \
   --env JIRA_BASE_URL=https://jira.example.com \
   --env JIRA_PAT=<personal access token> \
   --env ZEPHYR_DEFAULT_PROJECT_KEY=PROJ \
+  --env ZEPHYR_ALLOW_INTERNAL_API=true \
   -- node /path/to/zephyr-scale-mcp/dist/index.js
 ```
 
@@ -50,7 +51,8 @@ or **Claude Desktop / any MCP client** (`claude_desktop_config.json` / `.mcp.jso
       "env": {
         "JIRA_BASE_URL": "https://jira.example.com",
         "JIRA_PAT": "<personal access token>",
-        "ZEPHYR_DEFAULT_PROJECT_KEY": "PROJ"
+        "ZEPHYR_DEFAULT_PROJECT_KEY": "PROJ",
+        "ZEPHYR_ALLOW_INTERNAL_API": "true"
       }
     }
   }
@@ -58,6 +60,8 @@ or **Claude Desktop / any MCP client** (`claude_desktop_config.json` / `.mcp.jso
 ```
 
 Then ask your agent to run `health_check` — it verifies connectivity, credentials and that the Zephyr plugin answers.
+
+> 💡 **`ZEPHYR_ALLOW_INTERNAL_API=true` is optional but highly recommended.** It unlocks the things the public API simply cannot do: listing the whole folder tree (`get_folder_tree`), deleting folders (`delete_folder`) and discovering the exact case/execution status names the API silently expects (`get_status_options`). These tools call the same internal endpoints the Jira UI itself uses, but the vendor does not support them — drop the flag if that trade-off is not for you.
 
 ### Things you can ask your agent to do
 
