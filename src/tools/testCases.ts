@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Config } from '../config.js';
-import { atm, zephyrFetch } from '../http.js';
+import { atm, zephyrFetch, ZephyrApiError } from '../http.js';
 import {
   compact,
   defineTool,
@@ -256,7 +256,7 @@ Note: queries longer than 1500 characters (typically large IN lists) are automat
   defineTool(server, cfg, {
     name: 'create_test_cases_bulk',
     description:
-      'Create multiple Zephyr Scale test cases in one call (POST /testcase/bulk). Each item accepts the same fields as create_test_case; an item without its own projectKey uses the shared projectKey parameter (or ZEPHYR_DEFAULT_PROJECT_KEY). The same constraints apply: folders must already exist, status/priority values are case-sensitive, owner is a Jira user key. Returns an array of { key, url } for the created test cases.',
+      'Create multiple Zephyr Scale test cases in one call (POST /testcase/bulk). Each item accepts the same fields as create_test_case; an item without its own projectKey uses the shared projectKey parameter (or ZEPHYR_DEFAULT_PROJECT_KEY). The same constraints apply: folders must already exist, status/priority values are case-sensitive, owner is a Jira user key. Returns an array of { key, url } for the created test cases. Some Zephyr Scale Server builds lack a working bulk endpoint (it answers HTTP 500 with an empty body) — the tool then automatically falls back to creating the cases one by one via POST /testcase and returns { note, created, failed? } instead, so partial progress is never lost.',
     inputSchema: {
       projectKey: z
         .string()
@@ -266,11 +266,47 @@ Note: queries longer than 1500 characters (typically large IN lists) are automat
     },
     annotations: {},
     handler: async (args, { cfg }) => {
-      const body = args.testCases.map((item) => {
+      const items = args.testCases.map((item) => {
         const { projectKey, ...fields } = item;
         return compact({ projectKey: resolveProjectKey(cfg, projectKey ?? args.projectKey), ...fields });
       });
-      const raw = await zephyrFetch(cfg, { method: 'POST', path: atm('/testcase/bulk'), body });
+      let raw: unknown;
+      try {
+        raw = await zephyrFetch(cfg, { method: 'POST', path: atm('/testcase/bulk'), body: items });
+      } catch (err) {
+        // Some Server builds have no working bulk endpoint: it answers 500 with an empty body
+        // (or a plain 404) for ANY payload while single POST /testcase works fine (issue #1).
+        // Fall back to sequential creation so a broken endpoint never blocks the user.
+        const bulkUnavailable = err instanceof ZephyrApiError && (err.status >= 500 || (err.status === 404 && !err.htmlBody));
+        if (!bulkUnavailable) throw err;
+        const created: Array<{ key: string; url: string }> = [];
+        const failed: Array<{ index: number; name: unknown; error: string }> = [];
+        for (const [index, item] of items.entries()) {
+          try {
+            const res = (await zephyrFetch(cfg, { method: 'POST', path: atm('/testcase'), body: item })) as { key: string };
+            created.push({ key: res.key, url: testCaseWebUrl(cfg, res.key) });
+          } catch (itemErr) {
+            failed.push({
+              index,
+              name: (item as { name?: unknown }).name,
+              error: (itemErr instanceof Error ? itemErr.message : String(itemErr)).slice(0, 500),
+            });
+          }
+        }
+        if (created.length === 0) {
+          throw new Error(
+            `POST /testcase/bulk failed (HTTP ${err.status}) — the bulk endpoint may be unavailable on this Zephyr Scale Server version — ` +
+              `and the one-by-one fallback via POST /testcase also failed for all ${items.length} test cases. First error: ${failed[0]?.error}`,
+          );
+        }
+        return compact({
+          note:
+            `POST /testcase/bulk failed (HTTP ${err.status}) — the bulk endpoint may be unavailable on this Zephyr Scale Server version. ` +
+            `Fell back to creating the test cases one by one: ${created.length}/${items.length} created.`,
+          created,
+          failed: failed.length > 0 ? failed : undefined,
+        });
+      }
       const entries = Array.isArray(raw) ? raw : [raw];
       return entries.map((entry) => {
         const key =

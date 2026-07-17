@@ -391,3 +391,97 @@ describe('delete_folder (UNOFFICIAL, gated)', () => {
     await t.close();
   });
 });
+
+describe('create_test_cases_bulk: fallback when the bulk endpoint is broken (issue #1)', () => {
+  const bulk500 = () => new HttpResponse(null, { status: 500 });
+
+  it('falls back to one-by-one creation on 500 with an empty body', async () => {
+    const singleBodies: any[] = [];
+    let keySeq = 100;
+    mock.use(
+      http.post(`${BASE_URL}/rest/atm/1.0/testcase/bulk`, bulk500),
+      http.post(`${BASE_URL}/rest/atm/1.0/testcase`, async ({ request }) => {
+        singleBodies.push(await request.json());
+        return HttpResponse.json({ key: `PROJ-T${keySeq++}` }, { status: 201 });
+      }),
+    );
+    const t = await createTestClient();
+    const res = await t.call('create_test_cases_bulk', {
+      projectKey: 'PROJ',
+      testCases: [{ name: 'Кейс 1', folder: '/Inbox' }, { name: 'Case 2' }],
+    });
+    expect(res.isError).toBe(false);
+    expect(res.json.note).toMatch(/bulk endpoint may be unavailable/);
+    expect(res.json.note).toContain('2/2 created');
+    expect(res.json.created).toEqual([
+      { key: 'PROJ-T100', url: `${BASE_URL}/secure/Tests.jspa#/testCase/PROJ-T100` },
+      { key: 'PROJ-T101', url: `${BASE_URL}/secure/Tests.jspa#/testCase/PROJ-T101` },
+    ]);
+    expect(res.json.failed).toBeUndefined();
+    expect(singleBodies).toEqual([
+      { projectKey: 'PROJ', name: 'Кейс 1', folder: '/Inbox' },
+      { projectKey: 'PROJ', name: 'Case 2' },
+    ]);
+    await t.close();
+  });
+
+  it('reports partially failed items without losing the created ones', async () => {
+    let call = 0;
+    mock.use(
+      http.post(`${BASE_URL}/rest/atm/1.0/testcase/bulk`, bulk500),
+      http.post(`${BASE_URL}/rest/atm/1.0/testcase`, () => {
+        call++;
+        if (call === 2) {
+          return HttpResponse.json({ errorMessages: ['The folder /Nope does not exist'] }, { status: 400 });
+        }
+        return HttpResponse.json({ key: `PROJ-T${200 + call}` }, { status: 201 });
+      }),
+    );
+    const t = await createTestClient();
+    const res = await t.call('create_test_cases_bulk', {
+      projectKey: 'PROJ',
+      testCases: [{ name: 'ok-1' }, { name: 'bad', folder: '/Nope' }, { name: 'ok-2' }],
+    });
+    expect(res.isError).toBe(false);
+    expect(res.json.created.map((c: { key: string }) => c.key)).toEqual(['PROJ-T201', 'PROJ-T203']);
+    expect(res.json.failed).toHaveLength(1);
+    expect(res.json.failed[0]).toMatchObject({ index: 1, name: 'bad' });
+    expect(res.json.failed[0].error).toContain('does not exist');
+    await t.close();
+  });
+
+  it('surfaces a combined error when the fallback also fails for every item', async () => {
+    mock.use(
+      http.post(`${BASE_URL}/rest/atm/1.0/testcase/bulk`, bulk500),
+      http.post(
+        `${BASE_URL}/rest/atm/1.0/testcase`,
+        () => new HttpResponse('', { status: 401 }),
+      ),
+    );
+    const t = await createTestClient();
+    const res = await t.call('create_test_cases_bulk', { projectKey: 'PROJ', testCases: [{ name: 'x' }] });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/bulk endpoint may be unavailable/);
+    expect(res.text).toMatch(/fallback via POST \/testcase also failed/);
+    await t.close();
+  });
+
+  it('does NOT fall back on a 400 from the bulk endpoint (payload problem, not a broken endpoint)', async () => {
+    let singleCalls = 0;
+    mock.use(
+      http.post(`${BASE_URL}/rest/atm/1.0/testcase/bulk`, () =>
+        HttpResponse.json({ errorMessages: ['Test case status Nope does not exist'] }, { status: 400 }),
+      ),
+      http.post(`${BASE_URL}/rest/atm/1.0/testcase`, () => {
+        singleCalls++;
+        return HttpResponse.json({ key: 'PROJ-T1' }, { status: 201 });
+      }),
+    );
+    const t = await createTestClient();
+    const res = await t.call('create_test_cases_bulk', { projectKey: 'PROJ', testCases: [{ name: 'x', status: 'Nope' }] });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('Zephyr API error 400 (POST /rest/atm/1.0/testcase/bulk)');
+    expect(singleCalls).toBe(0);
+    await t.close();
+  });
+});

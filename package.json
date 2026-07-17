@@ -1,6 +1,6 @@
 {
   "name": "zephyr-scale-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for Zephyr Scale on self-hosted Jira Server / Data Center: test cases, cycles, executions, plans, folders, attachments and automation via REST API v1",
   "mcpName": "io.github.vilaabo/zephyr-scale-mcp",
   "type": "module",

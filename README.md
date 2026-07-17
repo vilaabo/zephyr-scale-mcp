@@ -194,6 +194,7 @@ Registered only with `ZEPHYR_ALLOW_INTERNAL_API=true`. Backed by the internal `/
 - A result's overall `status` may be ignored when sent together with `scriptResults` — send the step results first, then set the overall status via `update_last_test_result`.
 - `POST /testcase/link-issues` may answer 500 — link through `update_test_case` with `issueLinks` instead.
 - The custom automation-results format may be strictly validated: `{"version": 1, "executions": [{"source", "result", "testCase": {"key"}}]}` works, while extra per-execution fields (e.g. `executionTime`) are rejected with `Invalid Custom Format JSON file`. Cucumber JSON reports (scenario tagged `@TestCaseKey=PROJ-T1`) work as-is.
+- `POST /testcase/bulk` may answer HTTP 500 with an empty body for any payload while single creation works — `create_test_cases_bulk` detects this and automatically falls back to creating the cases one by one, reporting which items succeeded ([#1](https://github.com/vilaabo/zephyr-scale-mcp/issues/1)).
 
 ## Development
 
