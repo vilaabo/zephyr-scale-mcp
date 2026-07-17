@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import { atm, zephyrFetch } from '../http.js';
-import { fetchRunResultsPage } from '../runResults.js';
+import { collectRunResults, fetchRunResultsPage } from '../runResults.js';
 import { customFieldsSchema, maxResultsSchema, startAtSchema, testResultFieldsShape, USER_KEY_NOTE } from '../schemas.js';
 import { compact, defineTool, fieldsParam, pageEnvelope, resolveProjectKey } from '../toolkit.js';
 
@@ -176,6 +176,50 @@ export function registerTestRunTools(server: McpServer, cfg: Config): void {
         isLast: startAt + page.values.length >= page.total,
         note: page.note,
         values: page.values,
+      });
+    },
+  });
+
+  defineTool(server, cfg, {
+    name: 'get_test_run_summary',
+    description:
+      'Aggregated execution summary of a Zephyr Scale test run (test cycle): counts the LAST execution of every run item ' +
+      'grouped by status. Statuses are counted verbatim (case-sensitive, instance-specific custom sets included) in `byStatus`. ' +
+      "`executed` counts results whose status is anything other than the literal 'Not Executed'; `executionProgressPct` = executed/latestResults. " +
+      "`passRatePct` (share of executed) is present only when a literal 'Pass' status exists on the instance. " +
+      'Composite read-only tool: GET /testrun/{key} + paginated results (with the flat-endpoint fallback for older Zephyr versions).',
+    inputSchema: {
+      testRunKey: z.string().describe('Test run key, e.g. PROJ-R123'),
+    },
+    annotations: { readOnlyHint: true },
+    handler: async (args, { cfg }) => {
+      const run = (await zephyrFetch(cfg, {
+        method: 'GET',
+        path: atm(`/testrun/${encodeURIComponent(args.testRunKey)}`),
+        query: { fields: 'key,name,status,items' },
+      })) as Record<string, unknown>;
+      const { results, truncated, note } = await collectRunResults(cfg, args.testRunKey, true);
+
+      const byStatus: Record<string, number> = {};
+      for (const result of results) {
+        const status = typeof result.status === 'string' && result.status !== '' ? result.status : '(no status)';
+        byStatus[status] = (byStatus[status] ?? 0) + 1;
+      }
+      const total = results.length;
+      const executed = total - (byStatus['Not Executed'] ?? 0);
+      const pct = (part: number, whole: number): number => Math.round((part / whole) * 1000) / 10;
+
+      return compact({
+        key: args.testRunKey,
+        name: run.name,
+        runStatus: run.status,
+        itemCount: Array.isArray(run.items) ? run.items.length : undefined,
+        latestResults: total,
+        executed,
+        executionProgressPct: total > 0 ? pct(executed, total) : undefined,
+        byStatus,
+        passRatePct: byStatus['Pass'] !== undefined && executed > 0 ? pct(byStatus['Pass'], executed) : undefined,
+        note: truncated ? `${note ? `${note} ` : ''}Aggregation truncated at 10000 results.` : note,
       });
     },
   });

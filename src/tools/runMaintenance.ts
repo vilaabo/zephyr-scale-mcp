@@ -1,18 +1,14 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Config } from '../config.js';
-import { addHint, atm, zephyrFetch } from '../http.js';
-import { fetchRunResultsPage } from '../runResults.js';
+import { addHint, atm, zephyrFetch, ZephyrApiError } from '../http.js';
+import { collectRunResults, COLLECT_MAX_PAGES, COLLECT_PAGE_SIZE } from '../runResults.js';
 import { customFieldsSchema, testResultFieldsShape, USER_KEY_NOTE } from '../schemas.js';
 import { compact, defineTool, resolveProjectKey } from '../toolkit.js';
 
 /** Result fields (§7.4) that may be carried over into the items of the recreated run. */
 const RESULT_FIELD_KEYS = Object.keys(testResultFieldsShape);
 
-/** Page size used while collecting the source run's results when copyResults=true. */
-const RESULTS_PAGE_SIZE = 200;
-/** Safety cap so an inconsistent `total` can never loop forever. */
-const MAX_RESULT_PAGES = 50;
 
 const addItemSchema = z
   .object({
@@ -52,24 +48,10 @@ async function collectLatestResults(
   cfg: Config,
   testRunKey: string,
 ): Promise<{ latest: Map<string, Record<string, unknown>>; truncated: boolean }> {
+  const { results, truncated } = await collectRunResults(cfg, testRunKey, true);
   const latest = new Map<string, Record<string, unknown>>();
-  let startAt = 0;
-  let truncated = false;
-  for (let page = 0; ; page++) {
-    const res = await fetchRunResultsPage(cfg, testRunKey, {
-      startAt,
-      maxResults: RESULTS_PAGE_SIZE,
-      onlyLastExecutions: true,
-    });
-    for (const value of res.values as Array<Record<string, unknown>>) {
-      if (typeof value?.testCaseKey === 'string') latest.set(value.testCaseKey, value);
-    }
-    startAt += res.values.length;
-    if (res.values.length === 0 || startAt >= res.total) break;
-    if (page + 1 >= MAX_RESULT_PAGES) {
-      truncated = true;
-      break;
-    }
+  for (const value of results) {
+    if (typeof value?.testCaseKey === 'string') latest.set(value.testCaseKey, value);
   }
   return { latest, truncated };
 }
@@ -205,7 +187,7 @@ export function registerRunMaintenanceTools(server: McpServer, cfg: Config): voi
         copiedResults,
         deletedOriginal,
         copyResultsNote: resultsTruncated
-          ? `Result copying stopped after ${MAX_RESULT_PAGES * RESULTS_PAGE_SIZE} results — items beyond that limit were recreated without copied results.`
+          ? `Result copying stopped after ${COLLECT_MAX_PAGES * COLLECT_PAGE_SIZE} results — items beyond that limit were recreated without copied results.`
           : undefined,
       });
     },
@@ -251,6 +233,59 @@ export function registerRunMaintenanceTools(server: McpServer, cfg: Config): voi
           'This tool uses the UNOFFICIAL internal API — an error here usually means the endpoint does not exist on this Zephyr Scale version.',
         );
       }
+    },
+  });
+
+  defineTool(server, cfg, {
+    name: 'get_status_options',
+    description:
+      'UNOFFICIAL: list the EXACT internal names of the statuses (or priorities) configured for a project — the values that must be ' +
+      'passed verbatim (case-sensitive) to create_test_result / update_last_test_result / create_test_case etc. The public API v1 has ' +
+      'no such endpoint and SILENTLY IGNORES unknown execution statuses, so use this tool to discover the correct values. ' +
+      'Backed by the INTERNAL Zephyr Scale API /rest/tests/1.0 which the vendor does NOT support — it may change or be absent on any ' +
+      'version; several known endpoint variants are tried in order, and `source` in the response tells which one answered. ' +
+      'Available only because ZEPHYR_ALLOW_INTERNAL_API=true is set; the risks of using the internal API are on the user.',
+    inputSchema: {
+      projectKey: z.string().optional().describe('Jira project key; defaults to ZEPHYR_DEFAULT_PROJECT_KEY'),
+      kind: z
+        .enum(['test_result', 'test_case', 'test_case_priority'])
+        .optional()
+        .describe('Which value set to read: test_result (execution statuses, default), test_case (case statuses) or test_case_priority'),
+    },
+    annotations: { readOnlyHint: true },
+    handler: async (args, { cfg }) => {
+      const projectKey = resolveProjectKey(cfg, args.projectKey);
+      const project = (await zephyrFetch(cfg, {
+        method: 'GET',
+        path: `/rest/api/2/project/${encodeURIComponent(projectKey)}`,
+      })) as Record<string, unknown>;
+      const projectId = Number(project.id);
+      if (!Number.isFinite(projectId)) {
+        throw new Error(`Could not resolve the numeric id of project '${projectKey}' from Jira (got: ${JSON.stringify(project.id)})`);
+      }
+
+      const segment = { test_result: 'testresultstatus', test_case: 'testcasestatus', test_case_priority: 'testcasepriority' }[
+        args.kind ?? 'test_result'
+      ];
+      // The internal API is undocumented and its paths differ between plugin versions — try known variants in order.
+      const candidates: Array<{ path: string; query?: Record<string, string | number> }> = [
+        { path: `/rest/tests/1.0/project/${projectId}/${segment}` },
+        { path: `/rest/tests/1.0/${segment}`, query: { projectId } },
+      ];
+      let lastErr: unknown;
+      for (const candidate of candidates) {
+        try {
+          const raw = await zephyrFetch(cfg, { method: 'GET', path: candidate.path, query: candidate.query });
+          return { source: candidate.path, values: raw };
+        } catch (err) {
+          if (!(err instanceof ZephyrApiError) || err.status !== 404) throw err;
+          lastErr = err;
+        }
+      }
+      throw addHint(
+        lastErr,
+        'None of the known internal endpoint variants exist on this Zephyr Scale version. The status names can still be looked up in the UI: Project settings → Zephyr Scale → Statuses.',
+      );
     },
   });
 }

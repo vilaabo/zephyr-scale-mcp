@@ -319,4 +319,123 @@ Note: queries longer than 1500 characters (typically large IN lists) are automat
         path: atm(`/issuelink/${encodeURIComponent(args.issueKey)}/testcases`),
       }),
   });
+
+  defineTool(server, cfg, {
+    name: 'clone_test_case',
+    description:
+      'Clone a Zephyr Scale test case within its project — composite read+create: reads the source test case and creates a copy ' +
+      'with the same objective, precondition, status, priority, owner, labels, custom fields, parameters and (by default) test script. ' +
+      'Step ids are never carried over (the copy gets fresh steps), and execution history/attachments are NOT copied. ' +
+      "The copy's name defaults to '<source name> (copy)'; folder defaults to the source folder. Returns { key, url, sourceKey }.",
+    inputSchema: {
+      testCaseKey: z.string().describe('Key of the SOURCE test case, e.g. PROJ-T123'),
+      name: z.string().optional().describe("Name of the copy (defaults to '<source name> (copy)')"),
+      folder: z.string().optional().describe("Folder path for the copy, starting with '/' (defaults to the source folder; must exist)"),
+      includeScript: z.boolean().optional().describe('Copy the test script too (default true)'),
+    },
+    annotations: {},
+    handler: async (args, { cfg }) => {
+      const src = (await zephyrFetch(cfg, {
+        method: 'GET',
+        path: atm(`/testcase/${encodeURIComponent(args.testCaseKey)}`),
+      })) as Record<string, unknown>;
+
+      let testScript: Record<string, unknown> | undefined;
+      const srcScript = src.testScript as Record<string, unknown> | undefined;
+      if ((args.includeScript ?? true) && srcScript && typeof srcScript.type === 'string') {
+        testScript = compact({
+          type: srcScript.type,
+          text: typeof srcScript.text === 'string' ? srcScript.text : undefined,
+          steps: Array.isArray(srcScript.steps)
+            ? srcScript.steps.map((step) => {
+                // Fresh copy: strip ids/read-only extras so the API creates new steps.
+                const { id: _id, ...writable } = toWritableStep(step as RawStep);
+                return writable;
+              })
+            : undefined,
+        });
+      }
+
+      const inheritString = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
+      const body = compact({
+        projectKey: inheritString(src.projectKey) ?? args.testCaseKey.split('-')[0],
+        name: args.name ?? `${inheritString(src.name) ?? args.testCaseKey} (copy)`,
+        objective: inheritString(src.objective),
+        precondition: inheritString(src.precondition),
+        folder: args.folder ?? inheritString(src.folder),
+        status: inheritString(src.status),
+        priority: inheritString(src.priority),
+        component: inheritString(src.component),
+        owner: inheritString(src.owner),
+        estimatedTime: typeof src.estimatedTime === 'number' ? src.estimatedTime : undefined,
+        labels: Array.isArray(src.labels) ? src.labels : undefined,
+        customFields:
+          src.customFields && typeof src.customFields === 'object' && !Array.isArray(src.customFields) ? src.customFields : undefined,
+        parameters: src.parameters && typeof src.parameters === 'object' && !Array.isArray(src.parameters) ? src.parameters : undefined,
+        testScript,
+      });
+      const res = (await zephyrFetch(cfg, { method: 'POST', path: atm('/testcase'), body })) as { key: string };
+      return { key: res.key, url: testCaseWebUrl(cfg, res.key), sourceKey: args.testCaseKey };
+    },
+  });
+
+  defineTool(server, cfg, {
+    name: 'get_issue_test_coverage',
+    description:
+      'Traceability report for a Jira issue: lists the Zephyr Scale test cases linked to the issue together with the latest ' +
+      'execution result of each (composite read-only: GET /issuelink/{issueKey}/testcases, then per case GET /testcase/{key} ' +
+      'and GET /testcase/{key}/testresult/latest). lastResult is null when the case has never been executed. ' +
+      'Makes up to 2 HTTP calls per case — cap the volume with maxCases (default 50).',
+    inputSchema: {
+      issueKey: z.string().describe('Jira issue key, e.g. PROJ-123'),
+      includeLastResults: z.boolean().optional().describe('Fetch the latest execution result per case (default true)'),
+      maxCases: z.number().int().min(1).max(200).optional().describe('Maximum number of linked cases to expand (default 50)'),
+    },
+    annotations: { readOnlyHint: true },
+    handler: async (args, { cfg }) => {
+      const linked = await zephyrFetch(cfg, {
+        method: 'GET',
+        path: atm(`/issuelink/${encodeURIComponent(args.issueKey)}/testcases`),
+      });
+      const keys = (Array.isArray(linked) ? linked : [])
+        .map((entry) => (typeof entry === 'string' ? entry : (entry as Record<string, unknown>)?.key))
+        .filter((key): key is string => typeof key === 'string');
+
+      const maxCases = args.maxCases ?? 50;
+      const includeLastResults = args.includeLastResults ?? true;
+      const cases: Array<Record<string, unknown>> = [];
+      for (const key of keys.slice(0, maxCases)) {
+        const info = (await zephyrFetch(cfg, {
+          method: 'GET',
+          path: atm(`/testcase/${encodeURIComponent(key)}`),
+          query: { fields: 'key,name,status' },
+        }).catch(() => ({ key }))) as Record<string, unknown>;
+        let lastResult: Record<string, unknown> | null = null;
+        if (includeLastResults) {
+          const latest = (await zephyrFetch(cfg, {
+            method: 'GET',
+            path: atm(`/testcase/${encodeURIComponent(key)}/testresult/latest`),
+          }).catch(() => null)) as Record<string, unknown> | null;
+          if (latest) {
+            lastResult = compact({
+              status: latest.status,
+              environment: latest.environment,
+              actualEndDate: latest.actualEndDate ?? latest.executionDate,
+              executedBy: latest.executedBy ?? undefined,
+              comment: latest.comment ?? undefined,
+            });
+          }
+        }
+        cases.push({ key, name: info.name, status: info.status, lastResult });
+      }
+
+      return compact({
+        issueKey: args.issueKey,
+        totalLinked: keys.length,
+        returned: cases.length,
+        note: keys.length > cases.length ? `Expanded only the first ${cases.length} of ${keys.length} linked cases (maxCases).` : undefined,
+        cases,
+      });
+    },
+  });
 }
