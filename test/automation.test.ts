@@ -144,28 +144,28 @@ describe('download_feature_files', () => {
       }),
     );
     const t = await createTestClient();
-    const res = await t.call('download_feature_files', { query: 'testCase.projectKey = "PROJ"', outputPath });
+    const res = await t.call('download_feature_files', { tql: 'testCase.projectKey = "PROJ"', outputPath });
     expect(res.isError).toBe(false);
     expect(res.json).toEqual({ savedTo: outputPath, bytes: ZIP_BYTES.length });
     expect((await readFile(outputPath)).equals(ZIP_BYTES)).toBe(true);
-    expect(new URL(capturedUrl).searchParams.get('query')).toBe('testCase.projectKey = "PROJ"');
+    // Verified live on a real DC instance: the API requires the query param to be named 'tql'.
+    expect(new URL(capturedUrl).searchParams.get('tql')).toBe('testCase.projectKey = "PROJ"');
     await t.close();
   });
 
-  it('propagates a 404 and writes no file (query omitted from the request)', async () => {
+  it('requires tql (strict schema) and propagates a 404 without writing a file', async () => {
     const outputPath = join(tmpDir, 'never-written.zip');
-    let capturedUrl = '';
-    mock.use(
-      http.get(`${BASE_URL}/rest/atm/1.0/automation/testcases`, ({ request }) => {
-        capturedUrl = request.url;
-        return new HttpResponse('Not Found', { status: 404 });
-      }),
-    );
     const t = await createTestClient();
-    const res = await t.call('download_feature_files', { outputPath });
+
+    const missing = await t.call('download_feature_files', { outputPath });
+    expect(missing.isError).toBe(true);
+
+    mock.use(
+      http.get(`${BASE_URL}/rest/atm/1.0/automation/testcases`, () => new HttpResponse('Not Found', { status: 404 })),
+    );
+    const res = await t.call('download_feature_files', { tql: 'testCase.projectKey = "PROJ"', outputPath });
     expect(res.isError).toBe(true);
     expect(res.text).toMatch(/404/);
-    expect(new URL(capturedUrl).searchParams.has('query')).toBe(false);
     await expect(access(outputPath)).rejects.toThrow();
     await t.close();
   });

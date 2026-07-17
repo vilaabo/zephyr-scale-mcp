@@ -291,7 +291,7 @@ describe('automation tools: error paths and read-only mode', () => {
     );
     const t = await createTestClient({ readonly: true });
     const out = join(dir, 'features-readonly.zip');
-    const res = await t.call('download_feature_files', { outputPath: out });
+    const res = await t.call('download_feature_files', { tql: 'testCase.projectKey = "PROJ"', outputPath: out });
     expect(res.isError).toBe(false);
     expect(res.json).toEqual({ savedTo: out, bytes: zipBytes.length });
     await t.close();
@@ -305,7 +305,7 @@ describe('automation tools: error paths and read-only mode', () => {
     );
     await withClient(async (t) => {
       const out = join(dir, 'not-a-zip.zip');
-      const res = await t.call('download_feature_files', { outputPath: out });
+      const res = await t.call('download_feature_files', { tql: 'testCase.projectKey = "PROJ"', outputPath: out });
       expect(res.isError).toBe(true);
       expect(res.text).toContain('did not return a ZIP archive');
       expect(res.text).toContain('SSO login required');

@@ -75,12 +75,13 @@ export function registerAutomationTools(server: McpServer, cfg: Config): void {
   defineTool(server, cfg, {
     name: 'download_feature_files',
     description:
-      'Export BDD test cases from Zephyr Scale as Gherkin .feature files. The server returns a ZIP archive containing one .feature file per exported BDD test case; the archive is written to outputPath on the machine running this MCP server (the parent directory must already exist). Use the optional TQL query to select which test cases to export, e.g. \'testCase.projectKey = "PROJ"\'; when omitted the server exports per its defaults. Returns { savedTo, bytes }. Reads from Zephyr Scale only (also available in ZEPHYR_READONLY mode); the sole side effect is writing the local file.',
+      'Export BDD test cases from Zephyr Scale as Gherkin .feature files. The server returns a ZIP archive containing one .feature file per exported BDD test case; the archive is written to outputPath on the machine running this MCP server (the parent directory must already exist). The tql query is REQUIRED by the API and selects which test cases to export; this endpoint uses the testCase.-prefixed TQL dialect, e.g. \'testCase.projectKey = "PROJ"\' or \'testCase.key IN ("PROJ-T1", "PROJ-T2")\'. Returns { savedTo, bytes }. Reads from Zephyr Scale only (also available in ZEPHYR_READONLY mode); the sole side effect is writing the local file.',
     inputSchema: {
-      query: z
+      tql: z
         .string()
-        .optional()
-        .describe('TQL query selecting the BDD test cases to export, e.g. \'testCase.projectKey = "PROJ"\''),
+        .describe(
+          'TQL query selecting the BDD test cases to export (required by the API; testCase.-prefixed dialect), e.g. \'testCase.projectKey = "PROJ"\'',
+        ),
       outputPath: z
         .string()
         .describe('Local path where the ZIP archive is written (the parent directory must exist)'),
@@ -91,7 +92,7 @@ export function registerAutomationTools(server: McpServer, cfg: Config): void {
       const buf = (await zephyrFetch(cfg, {
         method: 'GET',
         path: atm('/automation/testcases'),
-        query: { query: args.query },
+        query: { tql: args.tql },
         binaryResponse: true,
       })) as Buffer;
       // Guard against a 200 that is not an archive (SSO/login pages, HTML error pages).
