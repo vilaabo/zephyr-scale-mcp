@@ -140,6 +140,7 @@ claude mcp add zephyr-scale \
 3. **Нет эндпоинта `GET /testrun/{key}/testresults/page`** (404 для любого ключа). Сервер автоматически переключается на устаревший плоский `GET /testrun/{key}/testresults` и пагинирует на своей стороне; в ответе появляется поле `note`. `onlyLastExecutions` в этом режиме эмулируется по максимальному `id` на каждый `testCaseKey`.
 4. **`status` результата теряется, если в том же запросе передан `scriptResults`**: `create_test_result` со `status: "Pass"` + `scriptResults` вернул `201 {id}`, но общий статус остался `Not Executed` (пошаговые статусы при этом применились). Без `scriptResults` статус применяется корректно. Рабочий паттерн: сначала `create_test_result` со `scriptResults`, затем общий `status` отдельным `update_last_test_result` (проверено). Точные имена статусов проекта смотрите через `get_status_options` (UNOFFICIAL) или в UI.
 5. **`POST /testcase/link-issues` отвечает 500** (эндпоинта, вероятно, ещё нет на этой версии) — используйте `update_test_case` / `create_test_case` с полем `issueLinks`, это работает.
+6. **Custom-формат результатов автоматизации валидируется строго**: работает `{"version": 1, "executions": [{"source", "result", "testCase": {"key"}}]}`, а дополнительные поля выполнения (например, `executionTime`) отклоняются с `Invalid Custom Format JSON file`. Cucumber JSON-отчёты (сценарий с тегом `@TestCaseKey=PROJ-T1`) работают как есть; статусы шагов переносятся, упавший шаг даёт общий `Fail`.
 
 ## Обработка ошибок
 
