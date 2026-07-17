@@ -23,7 +23,7 @@ Most Zephyr MCP servers target the Cloud API. If your Jira lives on-premise, you
 Requirements: Node.js ≥ 20, Jira Server/DC with the Zephyr Scale plugin, a [Personal Access Token](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html) (Jira 8.14+) or username/password.
 
 ```bash
-git clone <repo-url> zephyr-scale-mcp
+git clone https://github.com/vilaabo/zephyr-scale-mcp.git
 cd zephyr-scale-mcp
 npm install
 npm run build        # → dist/index.js

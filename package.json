@@ -28,6 +28,14 @@
     "testing"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vilaabo/zephyr-scale-mcp.git"
+  },
+  "homepage": "https://github.com/vilaabo/zephyr-scale-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/vilaabo/zephyr-scale-mcp/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^3.25.76"
