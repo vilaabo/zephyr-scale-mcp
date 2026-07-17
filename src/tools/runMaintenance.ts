@@ -44,11 +44,18 @@ function copyableResultFields(result: Record<string, unknown>): Record<string, u
   return out;
 }
 
+/** Explicit argument wins; otherwise the source run's value, with JSON null treated as absent. */
+const inherit = (explicit: unknown, sourceValue: unknown): unknown => (explicit !== undefined ? explicit : (sourceValue ?? undefined));
+
 /** Collect the LAST execution of every item of the run, indexed by testCaseKey. */
-async function collectLatestResults(cfg: Config, testRunKey: string): Promise<Map<string, Record<string, unknown>>> {
+async function collectLatestResults(
+  cfg: Config,
+  testRunKey: string,
+): Promise<{ latest: Map<string, Record<string, unknown>>; truncated: boolean }> {
   const latest = new Map<string, Record<string, unknown>>();
   let startAt = 0;
-  for (let page = 0; page < MAX_RESULT_PAGES; page++) {
+  let truncated = false;
+  for (let page = 0; ; page++) {
     const res = await fetchRunResultsPage(cfg, testRunKey, {
       startAt,
       maxResults: RESULTS_PAGE_SIZE,
@@ -59,8 +66,12 @@ async function collectLatestResults(cfg: Config, testRunKey: string): Promise<Ma
     }
     startAt += res.values.length;
     if (res.values.length === 0 || startAt >= res.total) break;
+    if (page + 1 >= MAX_RESULT_PAGES) {
+      truncated = true;
+      break;
+    }
   }
-  return latest;
+  return { latest, truncated };
 }
 
 export function registerRunMaintenanceTools(server: McpServer, cfg: Config): void {
@@ -72,9 +83,10 @@ export function registerRunMaintenanceTools(server: McpServer, cfg: Config): voi
       "This tool is the ONLY way to change a run's composition, name or folder: it reads the source run, builds a new items list " +
       '(kept source items in their original order, minus removeTestCaseKeys, plus addItems appended), creates a NEW run and returns ' +
       'its NEW key — references to the old key are not updated anywhere. Header fields not passed explicitly (name, folder, ' +
-      "testPlanKey, iteration, version, owner, plannedStartDate, plannedEndDate, customFields) default to the source run's values. " +
+      "testPlanKey, issueLinks, iteration, version, owner, plannedStartDate, plannedEndDate, customFields) default to the source run's values. " +
       'With copyResults=true the LAST execution of each kept item is carried over as the initial result of the new run ' +
-      '(status, comment, executedBy, executionTime, actual dates, per-step scriptResults, …). The source run is KEPT unless ' +
+      '(status, comment, executedBy, executionTime, actual dates, per-step scriptResults, …); when the same test case is included ' +
+      "as several items, each of them receives that case's latest execution while keeping its own environment/assignee. The source run is KEPT unless " +
       'deleteOriginal=true, and it is never deleted when creating the new run failed. ' +
       'Returns { key, originalKey, itemCount, copiedResults, deletedOriginal }.',
     inputSchema: {
@@ -90,6 +102,10 @@ export function registerRunMaintenanceTools(server: McpServer, cfg: Config): voi
         .string()
         .optional()
         .describe("Test plan to associate the new run with, e.g. PROJ-P123 (defaults to the source run's value)"),
+      issueLinks: z
+        .array(z.string())
+        .optional()
+        .describe('Jira issue keys to link, e.g. ["PROJ-123"] (defaults to the source run\'s links)'),
       iteration: z.string().optional().describe("Defaults to the source run's value"),
       version: z.string().optional().describe("Defaults to the source run's value"),
       owner: z.string().optional().describe(`Owner (defaults to the source run's value). ${USER_KEY_NOTE}`),
@@ -131,9 +147,9 @@ export function registerRunMaintenanceTools(server: McpServer, cfg: Config): voi
           typeof item.testCaseKey === 'string' && !remove.has(item.testCaseKey),
       );
 
-      const latestResults = args.copyResults
+      const { latest: latestResults, truncated: resultsTruncated } = args.copyResults
         ? await collectLatestResults(cfg, args.testRunKey)
-        : new Map<string, Record<string, unknown>>();
+        : { latest: new Map<string, Record<string, unknown>>(), truncated: false };
 
       let copiedResults = 0;
       const items: Array<Record<string, unknown>> = kept.map((item) => {
@@ -146,21 +162,24 @@ export function registerRunMaintenanceTools(server: McpServer, cfg: Config): voi
         const result = latestResults.get(item.testCaseKey);
         if (!result) return base;
         copiedResults++;
-        return { ...base, ...copyableResultFields(result) };
+        // Planning fields (base) win: when the same case is included as several items, each item
+        // keeps its own environment/assignee while receiving the case's latest execution fields.
+        return { ...copyableResultFields(result), ...base };
       });
       items.push(...(args.addItems ?? []).map((item) => compact(item)));
 
       const body = compact({
         projectKey: source.projectKey ?? args.testRunKey.split('-')[0],
-        name: args.name ?? source.name,
-        folder: args.folder ?? source.folder,
-        testPlanKey: args.testPlanKey ?? source.testPlanKey,
-        iteration: args.iteration ?? source.iteration,
-        version: args.version ?? source.version,
-        owner: args.owner ?? source.owner,
-        plannedStartDate: args.plannedStartDate ?? source.plannedStartDate,
-        plannedEndDate: args.plannedEndDate ?? source.plannedEndDate,
-        customFields: args.customFields ?? source.customFields,
+        name: inherit(args.name, source.name),
+        folder: inherit(args.folder, source.folder),
+        testPlanKey: inherit(args.testPlanKey, source.testPlanKey),
+        issueLinks: inherit(args.issueLinks, Array.isArray(source.issueLinks) ? source.issueLinks : undefined),
+        iteration: inherit(args.iteration, source.iteration),
+        version: inherit(args.version, source.version),
+        owner: inherit(args.owner, source.owner),
+        plannedStartDate: inherit(args.plannedStartDate, source.plannedStartDate),
+        plannedEndDate: inherit(args.plannedEndDate, source.plannedEndDate),
+        customFields: inherit(args.customFields, source.customFields),
         items,
       });
       const created = (await zephyrFetch(cfg, { method: 'POST', path: atm('/testrun'), body })) as { key: string };
@@ -170,21 +189,25 @@ export function registerRunMaintenanceTools(server: McpServer, cfg: Config): voi
         try {
           await zephyrFetch(cfg, { method: 'DELETE', path: atm(runPath) });
         } catch (err) {
-          throw addHint(
-            err,
-            `The new run ${created.key} WAS created successfully — only deleting the source run ${args.testRunKey} failed.`,
-          );
+          const note = `The new run ${created.key} WAS created successfully — only deleting the source run ${args.testRunKey} failed.`;
+          const hinted = addHint(err, note);
+          // addHint only decorates ZephyrApiError; never lose the new key for other error kinds.
+          if (hinted !== err) throw hinted;
+          throw new Error(`${err instanceof Error ? err.message : String(err)}\n${note}`);
         }
         deletedOriginal = true;
       }
 
-      return {
+      return compact({
         key: created.key,
         originalKey: args.testRunKey,
         itemCount: items.length,
         copiedResults,
         deletedOriginal,
-      };
+        copyResultsNote: resultsTruncated
+          ? `Result copying stopped after ${MAX_RESULT_PAGES * RESULTS_PAGE_SIZE} results — items beyond that limit were recreated without copied results.`
+          : undefined,
+      });
     },
   });
 

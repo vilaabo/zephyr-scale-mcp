@@ -160,7 +160,9 @@ src/
 ├── http.ts         # zephyrFetch(): auth, таймаут, ретраи, нормализация ошибок
 ├── schemas.ts      # zod-схемы общих структур (Step, TestScript, поля результатов…)
 ├── toolkit.ts      # defineTool(): strict-валидация, read-only guard, формат ответов
-└── tools/          # testCases, folders, testRuns, testResults, misc
+├── runResults.ts   # чтение результатов цикла с fallback на плоский эндпоинт
+└── tools/          # testCases, folders, testRuns, testResults, testPlans,
+                    # attachments, automation, runMaintenance, misc
 test/               # unit + contract (msw) + smoke.e2e
 ```
 

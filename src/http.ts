@@ -129,8 +129,12 @@ async function toApiError(res: Response, opts: ZephyrFetchOptions): Promise<Zeph
 }
 
 async function parseSuccess(res: Response, binary: boolean): Promise<unknown> {
+  if (binary) {
+    // Keep the Buffer contract even for empty 204/205 responses.
+    if (res.status === 204 || res.status === 205) return Buffer.alloc(0);
+    return Buffer.from(await res.arrayBuffer());
+  }
   if (res.status === 204 || res.status === 205) return {};
-  if (binary) return Buffer.from(await res.arrayBuffer());
   const text = await res.text();
   if (text.trim() === '') return {};
   try {

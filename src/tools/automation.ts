@@ -75,7 +75,7 @@ export function registerAutomationTools(server: McpServer, cfg: Config): void {
   defineTool(server, cfg, {
     name: 'download_feature_files',
     description:
-      'Export BDD test cases from Zephyr Scale as Gherkin .feature files. The server returns a ZIP archive containing one .feature file per exported BDD test case; the archive is written to outputPath on the machine running this MCP server (the parent directory must already exist). Use the optional TQL query to select which test cases to export, e.g. \'testCase.projectKey = "PROJ"\'; when omitted the server exports per its defaults. Returns { savedTo, bytes }. Does not modify anything in Zephyr Scale, but writes a local file.',
+      'Export BDD test cases from Zephyr Scale as Gherkin .feature files. The server returns a ZIP archive containing one .feature file per exported BDD test case; the archive is written to outputPath on the machine running this MCP server (the parent directory must already exist). Use the optional TQL query to select which test cases to export, e.g. \'testCase.projectKey = "PROJ"\'; when omitted the server exports per its defaults. Returns { savedTo, bytes }. Reads from Zephyr Scale only (also available in ZEPHYR_READONLY mode); the sole side effect is writing the local file.',
     inputSchema: {
       query: z
         .string()
@@ -85,7 +85,8 @@ export function registerAutomationTools(server: McpServer, cfg: Config): void {
         .string()
         .describe('Local path where the ZIP archive is written (the parent directory must exist)'),
     },
-    annotations: {},
+    // Reads from Zephyr only — must stay usable in ZEPHYR_READONLY mode; the local file write is the tool's purpose.
+    annotations: { readOnlyHint: true },
     handler: async (args, { cfg }) => {
       const buf = (await zephyrFetch(cfg, {
         method: 'GET',
@@ -93,6 +94,13 @@ export function registerAutomationTools(server: McpServer, cfg: Config): void {
         query: { query: args.query },
         binaryResponse: true,
       })) as Buffer;
+      // Guard against a 200 that is not an archive (SSO/login pages, HTML error pages).
+      if (buf.length < 2 || buf[0] !== 0x50 || buf[1] !== 0x4b) {
+        const preview = buf.toString('utf8', 0, 200).replace(/\s+/g, ' ').trim();
+        throw new Error(
+          `The server did not return a ZIP archive (missing 'PK' signature) — nothing was written. Response starts with: ${preview || '(empty body)'}`,
+        );
+      }
       await writeFile(args.outputPath, buf);
       return { savedTo: args.outputPath, bytes: buf.length };
     },

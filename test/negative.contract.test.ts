@@ -4,6 +4,9 @@
  * error and the tool must surface isError=true with the normalized message, never a success
  * envelope.
  */
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -209,6 +212,33 @@ describe('test result and misc tools: API error propagation', () => {
     });
   });
 
+  it('list_attachments surfaces a 404', async () => {
+    mock.use(
+      http.get(`${BASE_URL}/rest/atm/1.0/testcase/PROJ-T404/attachments`, () =>
+        HttpResponse.json({ errorMessages: ['Test case not found'] }, { status: 404 }),
+      ),
+    );
+    await withClient(async (t) => {
+      const res = await t.call('list_attachments', { target: 'test_case', testCaseKey: 'PROJ-T404' });
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain('Zephyr API error 404 (GET /rest/atm/1.0/testcase/PROJ-T404/attachments)');
+    });
+  });
+
+  it('delete_attachment surfaces a 404', async () => {
+    mock.use(
+      http.delete(`${BASE_URL}/rest/atm/1.0/attachments/999`, () =>
+        HttpResponse.json({ errorMessages: ['Attachment not found'] }, { status: 404 }),
+      ),
+    );
+    await withClient(async (t) => {
+      const res = await t.call('delete_attachment', { attachmentId: 999 });
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain('Zephyr API error 404 (DELETE /rest/atm/1.0/attachments/999)');
+      expect(res.text).not.toContain('"deleted"');
+    });
+  });
+
   it('health_check treats a JSON 403 from the plugin as reachable', async () => {
     mock.use(
       http.get(`${BASE_URL}/rest/api/2/myself`, () => HttpResponse.json({ name: 'vladimir' })),
@@ -221,5 +251,65 @@ describe('test result and misc tools: API error propagation', () => {
     expect(res.isError).toBe(false);
     expect(res.json).toMatchObject({ ok: true, zephyrPluginReachable: true });
     await t.close();
+  });
+});
+
+describe('automation tools: error paths and read-only mode', () => {
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zephyr-mcp-neg-'));
+  });
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('upload_cucumber_results surfaces a 400 with the response body', async () => {
+    const zipPath = join(dir, 'cucumber.zip');
+    await writeFile(zipPath, Buffer.from('PKfake'));
+    mock.use(
+      http.post(`${BASE_URL}/rest/atm/1.0/automation/execution/cucumber/PROJ`, () =>
+        HttpResponse.json({ errorMessages: ['No Cucumber reports found in the archive'] }, { status: 400 }),
+      ),
+    );
+    await withClient(async (t) => {
+      const res = await t.call('upload_cucumber_results', { projectKey: 'PROJ', filePath: zipPath });
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain('Zephyr API error 400 (POST /rest/atm/1.0/automation/execution/cucumber/PROJ)');
+      expect(res.text).toContain('No Cucumber reports found');
+    });
+  });
+
+  it('download_feature_files works in ZEPHYR_READONLY mode (it only reads from Zephyr)', async () => {
+    const zipBytes = Buffer.from('PKfeature-zip');
+    mock.use(
+      http.get(`${BASE_URL}/rest/atm/1.0/automation/testcases`, () =>
+        HttpResponse.arrayBuffer(zipBytes.buffer.slice(zipBytes.byteOffset, zipBytes.byteOffset + zipBytes.byteLength) as ArrayBuffer, {
+          headers: { 'Content-Type': 'application/zip' },
+        }),
+      ),
+    );
+    const t = await createTestClient({ readonly: true });
+    const out = join(dir, 'features-readonly.zip');
+    const res = await t.call('download_feature_files', { outputPath: out });
+    expect(res.isError).toBe(false);
+    expect(res.json).toEqual({ savedTo: out, bytes: zipBytes.length });
+    await t.close();
+  });
+
+  it('download_feature_files rejects a 200 that is not a ZIP and writes nothing', async () => {
+    mock.use(
+      http.get(`${BASE_URL}/rest/atm/1.0/automation/testcases`, () =>
+        HttpResponse.text('<html>SSO login required</html>', { headers: { 'Content-Type': 'text/html' } }),
+      ),
+    );
+    await withClient(async (t) => {
+      const out = join(dir, 'not-a-zip.zip');
+      const res = await t.call('download_feature_files', { outputPath: out });
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain('did not return a ZIP archive');
+      expect(res.text).toContain('SSO login required');
+      await expect(import('node:fs/promises').then((fs) => fs.access(out))).rejects.toThrow();
+    });
   });
 });

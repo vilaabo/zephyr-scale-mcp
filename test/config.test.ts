@@ -80,6 +80,12 @@ describe('loadConfig', () => {
     expect(cfg.maxRetries).toBe(5);
   });
 
+  it('parses ZEPHYR_ALLOW_INTERNAL_API with a false default', () => {
+    expect(loadConfig({ ...BASE_ENV }).allowInternalApi).toBe(false);
+    expect(loadConfig({ ...BASE_ENV, ZEPHYR_ALLOW_INTERNAL_API: 'true' }).allowInternalApi).toBe(true);
+    expect(() => loadConfig({ ...BASE_ENV, ZEPHYR_ALLOW_INTERNAL_API: 'да' })).toThrow(/ZEPHYR_ALLOW_INTERNAL_API/);
+  });
+
   it('rejects invalid log levels', () => {
     expect(() => loadConfig({ ...BASE_ENV, ZEPHYR_LOG_LEVEL: 'trace' })).toThrow(/ZEPHYR_LOG_LEVEL/);
   });

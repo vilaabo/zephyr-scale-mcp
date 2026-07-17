@@ -311,3 +311,93 @@ describe('get_folder_tree', () => {
     await t.close();
   });
 });
+
+describe('recreate_test_run_with_items: review fixes', () => {
+  it('does not forward JSON null header fields from the source run', async () => {
+    let capturedBody: any;
+    mock.use(
+      http.get(runUrl, () =>
+        HttpResponse.json({
+          key: 'PROJ-R1',
+          projectKey: 'PROJ',
+          name: 'Sprint 1',
+          folder: null,
+          testPlanKey: null,
+          owner: null,
+          items: [{ testCaseKey: 'PROJ-T1' }],
+        }),
+      ),
+      http.post(createUrl, async ({ request }) => {
+        capturedBody = await request.json();
+        return HttpResponse.json({ key: 'PROJ-R2' }, { status: 201 });
+      }),
+    );
+    const t = await createTestClient();
+    const res = await t.call('recreate_test_run_with_items', { testRunKey: 'PROJ-R1' });
+    expect(res.isError).toBe(false);
+    expect(capturedBody).toEqual({ projectKey: 'PROJ', name: 'Sprint 1', items: [{ testCaseKey: 'PROJ-T1' }] });
+    await t.close();
+  });
+
+  it('inherits issueLinks from the source run and lets an explicit value win', async () => {
+    let bodies: any[] = [];
+    mock.use(
+      http.get(runUrl, () =>
+        HttpResponse.json({
+          key: 'PROJ-R1',
+          projectKey: 'PROJ',
+          name: 'Sprint 1',
+          issueLinks: ['PROJ-7', 'PROJ-8'],
+          items: [{ testCaseKey: 'PROJ-T1' }],
+        }),
+      ),
+      http.post(createUrl, async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ key: 'PROJ-R2' }, { status: 201 });
+      }),
+    );
+    const t = await createTestClient();
+    await t.call('recreate_test_run_with_items', { testRunKey: 'PROJ-R1' });
+    await t.call('recreate_test_run_with_items', { testRunKey: 'PROJ-R1', issueLinks: ['PROJ-99'] });
+    expect(bodies[0].issueLinks).toEqual(['PROJ-7', 'PROJ-8']);
+    expect(bodies[1].issueLinks).toEqual(['PROJ-99']);
+    await t.close();
+  });
+
+  it("copyResults keeps each item's own environment when the copied result carries a different one", async () => {
+    let capturedBody: any;
+    mock.use(
+      http.get(runUrl, () =>
+        HttpResponse.json({
+          key: 'PROJ-R1',
+          projectKey: 'PROJ',
+          name: 'Sprint 1',
+          items: [
+            { testCaseKey: 'PROJ-T1', environment: 'Chrome' },
+            { testCaseKey: 'PROJ-T1', environment: 'Firefox' },
+          ],
+        }),
+      ),
+      http.get(resultsUrl, () =>
+        HttpResponse.json({
+          total: 1,
+          values: [{ testCaseKey: 'PROJ-T1', status: 'Pass', environment: 'Chrome' }],
+        }),
+      ),
+      http.post(createUrl, async ({ request }) => {
+        capturedBody = await request.json();
+        return HttpResponse.json({ key: 'PROJ-R2' }, { status: 201 });
+      }),
+    );
+    const t = await createTestClient();
+    const res = await t.call('recreate_test_run_with_items', { testRunKey: 'PROJ-R1', copyResults: true });
+    expect(res.isError).toBe(false);
+    // Both duplicate items receive the case's latest execution, but each keeps its own environment.
+    expect(capturedBody.items).toEqual([
+      { testCaseKey: 'PROJ-T1', environment: 'Chrome', status: 'Pass' },
+      { testCaseKey: 'PROJ-T1', environment: 'Firefox', status: 'Pass' },
+    ]);
+    expect(res.json).toMatchObject({ copiedResults: 2 });
+    await t.close();
+  });
+});
