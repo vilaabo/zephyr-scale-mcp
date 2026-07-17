@@ -10,13 +10,14 @@ MCP-сервер (Model Context Protocol) для **Zephyr Scale** на self-host
 |---|---|
 | Тест-кейсы | `create_test_case`, `get_test_case`, `search_test_cases` (TQL, GET/POST), `update_test_case`, `add_test_steps`, `set_test_script`, `delete_test_case`, `create_test_cases_bulk`, `link_issues_to_test_cases`, `get_test_cases_linked_to_issue` |
 | Папки | `create_folder` (с рекурсивным созданием цепочки), `rename_folder` |
-| Тест-циклы | `create_test_run` (с items и результатами), `get_test_run`, `search_test_runs`, `delete_test_run`, `get_test_run_results` (постранично), `recreate_test_run_with_items` (обход неизменяемости циклов) |
+| Тест-циклы | `create_test_run` (с items и результатами), `get_test_run`, `search_test_runs`, `delete_test_run`, `get_test_run_results` (постранично), `get_test_run_summary` (сводка по статусам), `recreate_test_run_with_items` (обход неизменяемости циклов) |
 | Результаты | `create_test_result`, `update_last_test_result`, `create_test_results_bulk`, `get_latest_result_for_test_case` |
 | Тест-планы | `create_test_plan`, `get_test_plan`, `update_test_plan`, `delete_test_plan`, `search_test_plans` |
 | Вложения | `upload_attachment`, `list_attachments`, `delete_attachment` (кейс / шаг кейса / цикл / результат / шаг результата, multipart) |
 | Автоматизация | `upload_automation_results`, `upload_cucumber_results` (zip), `download_feature_files` (zip с .feature) |
+| Композитные | `clone_test_case` (клонирование кейса), `get_issue_test_coverage` (кейсы задачи + их последние результаты) |
 | Сервисные | `list_environments`, `create_environment`, `find_jira_user`, `health_check` |
-| UNOFFICIAL | `get_folder_tree` — листинг дерева папок через internal API; регистрируется только при `ZEPHYR_ALLOW_INTERNAL_API=true` |
+| UNOFFICIAL | `get_folder_tree` (дерево папок), `get_status_options` (точные имена статусов/приоритетов проекта) — internal API; регистрируются только при `ZEPHYR_ALLOW_INTERNAL_API=true` |
 
 Поддерживаются все три формата скриптов тест-кейсов: **STEP_BY_STEP**, **PLAIN_TEXT**, **BDD (Gherkin)**, включая шаги Call to Test (`steps[].testCaseKey`) и параметры (§`parameters`).
 
