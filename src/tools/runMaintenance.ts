@@ -288,4 +288,31 @@ export function registerRunMaintenanceTools(server: McpServer, cfg: Config): voi
       );
     },
   });
+
+  defineTool(server, cfg, {
+    name: 'delete_folder',
+    description:
+      'UNOFFICIAL: permanently delete a Zephyr Scale folder by its numeric id (the public API v1 cannot delete folders at all; ' +
+      'this uses DELETE on the INTERNAL /rest/tests/1.0/folder/{id} endpoint — the same one the Jira UI calls). ' +
+      'Folder ids come from create_folder or get_folder_tree. ' +
+      'CAUTION: what happens to a NON-empty folder is version-specific (contents may be deleted or orphaned) — move test entities ' +
+      'out first (e.g. update_test_case with a new folder) and prefer deleting folders that get_folder_tree shows with itemsCount 0 ' +
+      'and no children. The vendor does not support the internal API; the endpoint may be absent on any version. ' +
+      'Available only because ZEPHYR_ALLOW_INTERNAL_API=true is set. Returns { deleted: true, id }.',
+    inputSchema: {
+      folderId: z.number().int().describe('Numeric folder id (from create_folder or get_folder_tree)'),
+    },
+    annotations: { destructiveHint: true },
+    handler: async (args, { cfg }) => {
+      try {
+        await zephyrFetch(cfg, { method: 'DELETE', path: `/rest/tests/1.0/folder/${args.folderId}` });
+      } catch (err) {
+        throw addHint(
+          err,
+          'This tool uses the UNOFFICIAL internal API — a 404/405 here usually means the endpoint does not exist on this Zephyr Scale version, and folders can then only be deleted in the UI.',
+        );
+      }
+      return { deleted: true, id: args.folderId };
+    },
+  });
 }

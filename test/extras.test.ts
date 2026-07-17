@@ -354,3 +354,40 @@ describe('download_attachment', () => {
     await t.close();
   });
 });
+
+describe('delete_folder (UNOFFICIAL, gated)', () => {
+  it('is not registered without ZEPHYR_ALLOW_INTERNAL_API', async () => {
+    const t = await createTestClient();
+    const res = await t.call('delete_folder', { folderId: 8926 });
+    expect(res.isError).toBe(true);
+    await t.close();
+  });
+
+  it('deletes a folder via the internal endpoint', async () => {
+    let method = '';
+    mock.use(
+      http.delete(`${BASE_URL}/rest/tests/1.0/folder/8926`, ({ request }) => {
+        method = request.method;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const t = await createTestClient({ allowInternalApi: true });
+    const res = await t.call('delete_folder', { folderId: 8926 });
+    expect(res.isError).toBe(false);
+    expect(res.json).toEqual({ deleted: true, id: 8926 });
+    expect(method).toBe('DELETE');
+    await t.close();
+  });
+
+  it('surfaces internal-API errors with the UNOFFICIAL hint', async () => {
+    mock.use(
+      http.delete(`${BASE_URL}/rest/tests/1.0/folder/999`, () => new HttpResponse('nope', { status: 404 })),
+    );
+    const t = await createTestClient({ allowInternalApi: true });
+    const res = await t.call('delete_folder', { folderId: 999 });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('404');
+    expect(res.text).toMatch(/internal API/);
+    await t.close();
+  });
+});
