@@ -164,7 +164,7 @@ Secrets (`JIRA_PAT`, `JIRA_PASSWORD`) never appear in logs, tool output or error
 </details>
 
 <details>
-<summary><b>UNOFFICIAL (internal API, opt-in)</b> — 2 tools</summary>
+<summary><b>UNOFFICIAL (internal API, opt-in)</b> — 3 tools</summary>
 
 Registered only with `ZEPHYR_ALLOW_INTERNAL_API=true`. Backed by the internal `/rest/tests/1.0` API, which the vendor does not support — endpoints may differ or be absent on any version.
 
