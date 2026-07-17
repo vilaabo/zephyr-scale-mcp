@@ -19,7 +19,7 @@ MCP-сервер (Model Context Protocol) для **Zephyr Scale** на self-host
 | Автоматизация | `upload_automation_results`, `upload_cucumber_results` (zip), `download_feature_files` (zip с .feature) |
 | Композитные | `clone_test_case` (клонирование кейса), `get_issue_test_coverage` (кейсы задачи + их последние результаты) |
 | Сервисные | `list_environments`, `create_environment`, `find_jira_user`, `health_check` |
-| UNOFFICIAL | `get_folder_tree` (дерево папок), `get_status_options` (точные имена статусов/приоритетов проекта) — internal API; регистрируются только при `ZEPHYR_ALLOW_INTERNAL_API=true` |
+| UNOFFICIAL | `get_folder_tree` (дерево папок), `get_status_options` (точные имена статусов/приоритетов проекта), `delete_folder` (удаление папки по id) — internal API; регистрируются только при `ZEPHYR_ALLOW_INTERNAL_API=true` |
 
 Поддерживаются все три формата скриптов тест-кейсов: **STEP_BY_STEP**, **PLAIN_TEXT**, **BDD (Gherkin)**, включая шаги Call to Test (`steps[].testCaseKey`) и параметры (§`parameters`).
 

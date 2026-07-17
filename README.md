@@ -161,6 +161,7 @@ Registered only with `ZEPHYR_ALLOW_INTERNAL_API=true`. Backed by the internal `/
 |---|---|
 | `get_folder_tree` | The complete folder tree with numeric ids (the public API cannot list folders at all) |
 | `get_status_options` | The exact internal names of the project's case/execution statuses and priorities — the values the API silently expects |
+| `delete_folder` | Delete a folder by numeric id (the public API cannot delete folders at all) |
 
 </details>
 
