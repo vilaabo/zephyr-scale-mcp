@@ -1,33 +1,26 @@
 # zephyr-scale-mcp
 
-MCP-сервер (Model Context Protocol) для **Zephyr Scale** на self-hosted **Jira Server / Data Center** (бывш. TM4J / Kanoah). Даёт ИИ-агентам (Claude Code, Claude Desktop и другим MCP-клиентам) инструменты для управления тестовой моделью через REST API v1 (`{JIRA_BASE_URL}/rest/atm/1.0`).
+**MCP server for Zephyr Scale on self-hosted Jira Server / Data Center** — gives AI agents (Claude Code, Claude Desktop, Cursor and any other [MCP](https://modelcontextprotocol.io) client) full control over your test management: test cases, folders, test cycles, executions, test plans, attachments and automation — through the Zephyr Scale REST API v1 (`/rest/atm/1.0`).
 
-> Zephyr Scale **Cloud** (API v2) и Zephyr **Squad** — другие API, этим сервером **не поддерживаются**.
+[Русская версия →](README.ru.md)
 
-## Возможности
+![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen) ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue) ![Tests](https://img.shields.io/badge/tests-178%20passing-brightgreen) ![License](https://img.shields.io/badge/license-MIT-blue) ![API](https://img.shields.io/badge/Zephyr%20Scale-Server%2FDC%20v1-orange)
 
-| Группа | Инструменты |
-|---|---|
-| Тест-кейсы | `create_test_case`, `get_test_case`, `search_test_cases` (TQL, GET/POST), `update_test_case`, `add_test_steps`, `set_test_script`, `delete_test_case`, `create_test_cases_bulk`, `link_issues_to_test_cases`, `get_test_cases_linked_to_issue` |
-| Папки | `create_folder` (с рекурсивным созданием цепочки), `rename_folder` |
-| Тест-циклы | `create_test_run` (с items и результатами), `get_test_run`, `search_test_runs`, `delete_test_run`, `get_test_run_results` (постранично), `get_test_run_summary` (сводка по статусам), `recreate_test_run_with_items` (обход неизменяемости циклов) |
-| Результаты | `create_test_result`, `update_last_test_result`, `create_test_results_bulk`, `get_latest_result_for_test_case` |
-| Тест-планы | `create_test_plan`, `get_test_plan`, `update_test_plan`, `delete_test_plan`, `search_test_plans` |
-| Вложения | `upload_attachment`, `list_attachments`, `delete_attachment` (кейс / шаг кейса / цикл / результат / шаг результата, multipart) |
-| Автоматизация | `upload_automation_results`, `upload_cucumber_results` (zip), `download_feature_files` (zip с .feature) |
-| Композитные | `clone_test_case` (клонирование кейса), `get_issue_test_coverage` (кейсы задачи + их последние результаты) |
-| Сервисные | `list_environments`, `create_environment`, `find_jira_user`, `health_check` |
-| UNOFFICIAL | `get_folder_tree` (дерево папок), `get_status_options` (точные имена статусов/приоритетов проекта) — internal API; регистрируются только при `ZEPHYR_ALLOW_INTERNAL_API=true` |
+> ⚠️ This server targets **Zephyr Scale Server / Data Center** (formerly TM4J). Zephyr Scale **Cloud** (API v2) and Zephyr **Squad** are different APIs and are out of scope.
 
-Поддерживаются все три формата скриптов тест-кейсов: **STEP_BY_STEP**, **PLAIN_TEXT**, **BDD (Gherkin)**, включая шаги Call to Test (`steps[].testCaseKey`) и параметры (§`parameters`).
+## Why
 
-## Требования
+Most Zephyr MCP servers target the Cloud API. If your Jira lives on-premise, you are stuck — and the Server/DC API v1 has real teeth: test cycles are immutable after creation, folders can't be listed, statuses are case-sensitive internal names, BDD scripts reject `Feature:` headers, and older plugin builds are missing whole endpoints. This server knows all of that:
 
-- Node.js ≥ 20
-- Jira Server / Data Center с установленным плагином Zephyr Scale
-- Персональный токен Jira DC (PAT, Jira 8.14+) или логин/пароль
+- **43 tools** covering the complete test-management lifecycle, each with an LLM-friendly description that encodes the API's constraints and pitfalls;
+- **Composite tools for the API's blind spots** — `add_test_steps` safely merges steps (read → merge by id → write), `recreate_test_run_with_items` works around cycle immutability (optionally carrying the last results over), `clone_test_case`, `get_issue_test_coverage`, `get_test_run_summary`;
+- **Graceful degradation on older plugin builds** — automatic fallback when the paginated results endpoint is missing, verified against a real 2018-era TM4J instance;
+- **Production-grade plumbing** — retries with `Retry-After`, exponential backoff for GET, strict zod validation, typed error messages with actionable hints, secrets never reach logs or tool output, read-only mode;
+- **178 unit & contract tests** (vitest + msw) plus a gated end-to-end smoke scenario.
 
-## Установка и сборка
+## Quick start
+
+Requirements: Node.js ≥ 20, Jira Server/DC with the Zephyr Scale plugin, a [Personal Access Token](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html) (Jira 8.14+) or username/password.
 
 ```bash
 git clone <repo-url> zephyr-scale-mcp
@@ -36,27 +29,17 @@ npm install
 npm run build        # → dist/index.js
 ```
 
-## Конфигурация (переменные окружения)
+Wire it into **Claude Code**:
 
-| Переменная | Обяз. | Default | Назначение |
-|---|---|---|---|
-| `JIRA_BASE_URL` | да | — | Базовый URL Jira без завершающего `/`, напр. `https://jira.example.com` |
-| `JIRA_AUTH` | нет | `pat` | `pat` \| `basic` |
-| `JIRA_PAT` | при `pat` | — | Персональный токен доступа Jira DC |
-| `JIRA_USERNAME`, `JIRA_PASSWORD` | при `basic` | — | Логин/пароль |
-| `JIRA_TIMEOUT_MS` | нет | `30000` | Таймаут одного HTTP-запроса |
-| `JIRA_MAX_RETRIES` | нет | `2` | Повторы для GET и для ответов 429/503 |
-| `JIRA_TLS_REJECT_UNAUTHORIZED` | нет | `true` | `false` разрешает самоподписанные сертификаты (отключает проверку TLS **для всех** запросов процесса; в stderr выводится предупреждение) |
-| `ZEPHYR_DEFAULT_PROJECT_KEY` | нет | — | Подставляется, если инструмент вызван без `projectKey` |
-| `ZEPHYR_READONLY` | нет | `false` | При `true` инструменты записи возвращают ошибку |
-| `ZEPHYR_ALLOW_INTERNAL_API` | нет | `false` | При `true` регистрируются UNOFFICIAL-инструменты на базе internal API `/rest/tests/1.0` (вендором не поддерживается — риски на пользователе) |
-| `ZEPHYR_LOG_LEVEL` | нет | `info` | `debug` \| `info` \| `warn` \| `error` (весь лог — в stderr) |
+```bash
+claude mcp add zephyr-scale \
+  --env JIRA_BASE_URL=https://jira.example.com \
+  --env JIRA_PAT=<personal access token> \
+  --env ZEPHYR_DEFAULT_PROJECT_KEY=PROJ \
+  -- node /path/to/zephyr-scale-mcp/dist/index.js
+```
 
-Секреты (`JIRA_PAT`, `JIRA_PASSWORD`) не пишутся в логи и не попадают в ответы инструментов и тексты ошибок.
-
-## Подключение к MCP-клиенту
-
-`claude_desktop_config.json` / `.mcp.json`:
+or **Claude Desktop / any MCP client** (`claude_desktop_config.json` / `.mcp.json`):
 
 ```json
 {
@@ -66,7 +49,6 @@ npm run build        # → dist/index.js
       "args": ["/path/to/zephyr-scale-mcp/dist/index.js"],
       "env": {
         "JIRA_BASE_URL": "https://jira.example.com",
-        "JIRA_AUTH": "pat",
         "JIRA_PAT": "<personal access token>",
         "ZEPHYR_DEFAULT_PROJECT_KEY": "PROJ"
       }
@@ -75,103 +57,153 @@ npm run build        # → dist/index.js
 }
 ```
 
-Claude Code:
+Then ask your agent to run `health_check` — it verifies connectivity, credentials and that the Zephyr plugin answers.
+
+### Things you can ask your agent to do
+
+- *"Create a folder `/Regression/Payments` and add step-by-step test cases for the checkout flow described in this document"*
+- *"Find all Draft cases in `/Regression`, review them and mark the ready ones Approved"*
+- *"Create a test cycle for sprint 42 with all smoke cases, then record the results from this report"*
+- *"Which test cases cover issue PROJ-123 and when did they last pass?"*
+- *"Add two steps to PROJ-T55 after step 3"* — existing steps survive, guaranteed
+- *"Recreate cycle PROJ-R7 with three more cases, keep the results, delete the old one"*
+
+## Configuration
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `JIRA_BASE_URL` | yes | — | Jira base URL without a trailing `/`, e.g. `https://jira.example.com` |
+| `JIRA_AUTH` | no | `pat` | `pat` \| `basic` |
+| `JIRA_PAT` | with `pat` | — | Jira DC Personal Access Token |
+| `JIRA_USERNAME`, `JIRA_PASSWORD` | with `basic` | — | Basic-auth credentials |
+| `JIRA_TIMEOUT_MS` | no | `30000` | Per-request timeout |
+| `JIRA_MAX_RETRIES` | no | `2` | Retries for GET and for 429/503 responses |
+| `JIRA_TLS_REJECT_UNAUTHORIZED` | no | `true` | `false` allows self-signed certificates (disables TLS verification process-wide; a warning is printed) |
+| `ZEPHYR_DEFAULT_PROJECT_KEY` | no | — | Used when a tool is called without `projectKey` |
+| `ZEPHYR_READONLY` | no | `false` | When `true`, write tools return an error |
+| `ZEPHYR_ALLOW_INTERNAL_API` | no | `false` | Registers UNOFFICIAL tools backed by the internal `/rest/tests/1.0` API (unsupported by the vendor — use at your own risk) |
+| `ZEPHYR_LOG_LEVEL` | no | `info` | `debug` \| `info` \| `warn` \| `error` (all logging goes to stderr) |
+
+Secrets (`JIRA_PAT`, `JIRA_PASSWORD`) never appear in logs, tool output or error messages.
+
+## Tools
+
+<details>
+<summary><b>Test cases</b> — 12 tools</summary>
+
+| Tool | Description |
+|---|---|
+| `create_test_case` | Create a case with a STEP_BY_STEP / PLAIN_TEXT / BDD script, parameters, custom fields, Call-to-Test steps |
+| `get_test_case` | Read a case (optionally restricted by `fields`) |
+| `search_test_cases` | TQL search with pagination; auto-switches to POST for huge `IN` lists |
+| `update_test_case` | Partial update; documents the step-id sync semantics |
+| `add_test_steps` | Safely append/prepend/insert steps — read → merge by id → write, nothing gets lost |
+| `set_test_script` | Replace the whole script / change its format |
+| `clone_test_case` | Copy a case with its script (fresh step ids), fields and parameters |
+| `delete_test_case` | Permanent delete |
+| `create_test_cases_bulk` | Create many cases in one call |
+| `link_issues_to_test_cases` | Bulk-link cases to Jira issues |
+| `get_test_cases_linked_to_issue` | Reverse lookup: issue → cases |
+| `get_issue_test_coverage` | Traceability report: issue → cases → their latest results |
+
+</details>
+
+<details>
+<summary><b>Test cycles & results</b> — 11 tools</summary>
+
+| Tool | Description |
+|---|---|
+| `create_test_run` | Create a cycle with its full item list — and optionally results in the same call |
+| `get_test_run` / `search_test_runs` / `delete_test_run` | Read / TQL search / delete |
+| `get_test_run_results` | Paginated results, with automatic fallback for older plugin builds |
+| `get_test_run_summary` | Aggregated status counts, progress %, pass rate |
+| `recreate_test_run_with_items` | The workaround for cycle immutability: rebuild with added/removed cases, carry the last results over, optionally delete the original |
+| `create_test_result` | New execution, incl. per-step `scriptResults` |
+| `update_last_test_result` | Partial update of the latest execution |
+| `create_test_results_bulk` | Many results in one call |
+| `get_latest_result_for_test_case` | Latest execution across all cycles |
+
+</details>
+
+<details>
+<summary><b>Test plans, folders, attachments, automation</b> — 14 tools</summary>
+
+| Tool | Description |
+|---|---|
+| `create_test_plan` / `get_test_plan` / `update_test_plan` / `delete_test_plan` / `search_test_plans` | Full test-plan CRUD + TQL search |
+| `create_folder` | Create case/plan/cycle folders; missing parents are created automatically |
+| `rename_folder` | Rename by numeric id |
+| `upload_attachment` | Attach a local file to a case, case step, cycle, result or result step (multipart) |
+| `list_attachments` / `download_attachment` / `delete_attachment` | Manage and fetch attachments |
+| `upload_automation_results` | Publish a ZIP of Zephyr-format automation results (creates a cycle) |
+| `upload_cucumber_results` | Publish a ZIP of Cucumber JSON reports |
+| `download_feature_files` | Export BDD cases as a ZIP of `.feature` files |
+
+</details>
+
+<details>
+<summary><b>Service tools</b> — 4 tools</summary>
+
+| Tool | Description |
+|---|---|
+| `health_check` | Verifies Jira availability, credentials and the Zephyr plugin |
+| `list_environments` / `create_environment` | Project environments |
+| `find_jira_user` | Resolve the Jira **user key** (`JIRAUSER…`) required by owner/executedBy/assignedTo fields |
+
+</details>
+
+<details>
+<summary><b>UNOFFICIAL (internal API, opt-in)</b> — 2 tools</summary>
+
+Registered only with `ZEPHYR_ALLOW_INTERNAL_API=true`. Backed by the internal `/rest/tests/1.0` API, which the vendor does not support — endpoints may differ or be absent on any version.
+
+| Tool | Description |
+|---|---|
+| `get_folder_tree` | The complete folder tree with numeric ids (the public API cannot list folders at all) |
+| `get_status_options` | The exact internal names of the project's case/execution statuses and priorities — the values the API silently expects |
+
+</details>
+
+## Server/DC API v1 — what this server protects you from
+
+1. **Cycles are immutable.** No `PUT /testrun` exists: you cannot rename a cycle or change its cases. The item list is set only at creation — `recreate_test_run_with_items` is the escape hatch.
+2. **Folders are never auto-created** and cannot be listed publicly; renaming needs a numeric id (returned by `create_folder`, or use `get_folder_tree`).
+3. **`owner` / `executedBy` / `assignedTo` take a Jira user key** (`JIRAUSER10000`) — not a username, not an e-mail. `find_jira_user` resolves it.
+4. **TQL is strict**: mandatory spaces around operators, double-quoted strings, `AND` only. Cycles are searchable only by `projectKey` and `folder`.
+5. **Statuses/priorities are case-sensitive internal names.** The UI shows localized labels for the built-ins (`Draft` may render as something else in your language) while custom statuses use their literal names — `get_status_options` shows the truth.
+6. **BDD scripts are the scenario body only** — bare `Given/When/Then/And/But` lines. Texts wrapped in `Feature:`/`Scenario:` headers are rejected with `400 Invalid BDD Script`; the wrapper is generated on export.
+7. **Step editing is id-based sync**: on `PUT`, steps without an id are created, steps with an id updated, and existing steps missing from the list are **deleted**. `add_test_steps` handles the read-merge-write for you.
+8. Deprecated API fields (`issueKey`, `executionDate`, `userKey`) are intentionally not accepted.
+
+### Older plugin builds (tested against a real legacy instance)
+
+- Cycle keys may use the `-C` prefix (`PROJ-C34`) instead of `-R` — handled transparently.
+- `GET /testrun/{key}/testresults/page` may not exist — the server automatically falls back to the flat endpoint and paginates client-side (the response carries a `note`).
+- A result's overall `status` may be ignored when sent together with `scriptResults` — send the step results first, then set the overall status via `update_last_test_result`.
+- `POST /testcase/link-issues` may answer 500 — link through `update_test_case` with `issueLinks` instead.
+
+## Development
 
 ```bash
-claude mcp add zephyr-scale \
-  --env JIRA_BASE_URL=https://jira.example.com \
-  --env JIRA_PAT=<token> \
-  --env ZEPHYR_DEFAULT_PROJECT_KEY=PROJ \
-  -- node /path/to/zephyr-scale-mcp/dist/index.js
+npm run typecheck    # tsc --noEmit (strict)
+npm test             # 178 unit + contract tests (vitest + msw), no network
+npm run smoke        # end-to-end scenario against a real instance (ZEPHYR_E2E=1)
 ```
-
-Проверка: попросите агента вызвать `health_check` — он должен вернуть `{ ok: true, jiraUser, baseUrl, zephyrPluginReachable }`.
-
-## Примеры
-
-Создание кейса с шагами:
-
-```json
-{
-  "tool": "create_test_case",
-  "arguments": {
-    "projectKey": "PROJ",
-    "name": "Успешный вход",
-    "folder": "/Регресс/Авторизация",
-    "testScript": {
-      "type": "STEP_BY_STEP",
-      "steps": [
-        { "description": "Открыть страницу логина", "testData": "URL: /login", "expectedResult": "Форма логина отображается" },
-        { "testCaseKey": "PROJ-T45" },
-        { "description": "Ввести валидные креды", "expectedResult": "Открыт дашборд" }
-      ]
-    }
-  }
-}
-```
-
-Поиск по TQL: `projectKey = "PROJ" AND folder = "/Регресс" AND status = "Approved"` (синтаксис строгий: пробелы вокруг операторов, строки в двойных кавычках, только `AND`).
-
-Цикл с результатами создаётся одним вызовом `create_test_run` — см. описание инструмента (поле `items`, в т.ч. `scriptResults` с пошаговыми статусами).
-
-## Ограничения API v1 (важно)
-
-1. **Тест-циклы неизменяемы после создания.** `PUT /testrun/{key}` не существует: нельзя переименовать цикл, сменить папку, добавить/убрать кейсы. Состав задаётся только в `create_test_run` (поле `items`). Инструменты результатов лишь находят **существующий** item по `testCaseKey`.
-2. **Папки** не создаются автоматически при создании кейсов/циклов; публичного листинга папок нет; переименование — только по числовому `id` (его возвращает `create_folder`).
-3. **`owner` / `executedBy` / `assignedTo`** — это Jira **user key** (`JIRAUSER10000`), не логин и не e-mail; для резолва используйте `find_jira_user`.
-4. **TQL строгий** — только `AND`, пробелы вокруг операторов, строки в двойных кавычках; для циклов доступны только поля `projectKey` и `folder`.
-5. Статусы / приоритеты / окружения **регистрозависимы** и передаются внутренними (нелокализованными) именами; на инстансе могут быть кастомные наборы.
-6. В `labels` пробелы заменяются API на `_`.
-7. Устаревшие поля API не поддерживаются намеренно: `issueKey` → `issueLinks`, `executionDate` → `actualEndDate`, `userKey` → `executedBy`.
-8. Ключи сущностей: `PROJ-T1` — кейс, `PROJ-P1` — план, `PROJ-R1` — цикл.
-9. Серверный default `maxResults` = 200; инструменты по умолчанию запрашивают 50.
-10. Шаги STEP_BY_STEP при `PUT` синхронизируются по `id`: без `id` — создать, с `id` — обновить, отсутствует в списке — **удалить**. Поэтому `update_test_case` с `testScript.steps` требует полный итоговый список; безопасное частичное добавление шагов делает `add_test_steps` (читает кейс, сливает, записывает).
-
-Если API вашего инстанса ведёт себя иначе (старая версия плагина и т.п.) — зафиксируйте расхождение здесь и сообщите разработчику.
-
-### Известные расхождения конкретных инстансов
-
-Обнаружены при живой проверке на Jira DC со старой версией плагина (2026-07-16, стенд `jira.digital-spirit.ru`, проект `NBUL`):
-
-1. **BDD-текст — только строки шагов**, без заголовков: `POST /testcase` с `testScript.type = "BDD"` принимает исключительно строки `Given/When/Then/And/But` (кириллица в тексте шагов — ок, проверено вживую с round-trip байт-в-байт). Текст с обёрткой `Feature:` / `Scenario:` отклоняется с `400 {"errorMessages":["Invalid BDD Script"]}` — несмотря на то, что пример в §8.1 ТЗ включает эти заголовки. BDD-кейс в Zephyr Scale Server — это один сценарий; `Feature` генерируется при экспорте. Описания инструментов предупреждают об этом.
-2. **Ключи циклов с префиксом `-C`**, а не `-R` (`NBUL-C34`) — старая нотация TM4J. На работу сервера не влияет: ключи передаются сквозняком.
-3. **Нет эндпоинта `GET /testrun/{key}/testresults/page`** (404 для любого ключа). Сервер автоматически переключается на устаревший плоский `GET /testrun/{key}/testresults` и пагинирует на своей стороне; в ответе появляется поле `note`. `onlyLastExecutions` в этом режиме эмулируется по максимальному `id` на каждый `testCaseKey`.
-4. **`status` результата теряется, если в том же запросе передан `scriptResults`**: `create_test_result` со `status: "Pass"` + `scriptResults` вернул `201 {id}`, но общий статус остался `Not Executed` (пошаговые статусы при этом применились). Без `scriptResults` статус применяется корректно. Рабочий паттерн: сначала `create_test_result` со `scriptResults`, затем общий `status` отдельным `update_last_test_result` (проверено). Точные имена статусов проекта смотрите через `get_status_options` (UNOFFICIAL) или в UI.
-5. **`POST /testcase/link-issues` отвечает 500** (эндпоинта, вероятно, ещё нет на этой версии) — используйте `update_test_case` / `create_test_case` с полем `issueLinks`, это работает.
-
-## Обработка ошибок
-
-Ошибки API возвращаются в формате `Zephyr API error <status> (<METHOD> <path>): <тело до 2 КБ>` с подсказкой для типовых причин (несуществующая папка, регистрозависимые статусы, синтаксис TQL, недоступный плагин, права). 429/503 повторяются с учётом `Retry-After`; сетевые ошибки и 5xx повторяются только для GET (backoff `500ms * 2^n` + джиттер).
-
-## Разработка
-
-```bash
-npm run typecheck    # tsc --noEmit
-npm test             # unit + contract (vitest + msw), без сети
-npm run smoke        # интеграционный сценарий против реального стенда (ZEPHYR_E2E=1)
-```
-
-Smoke-сценарий требует реальных `JIRA_BASE_URL`/`JIRA_PAT` и `ZEPHYR_DEFAULT_PROJECT_KEY` (выделенный тестовый проект!) и оставляет на стенде папки `/mcp-smoke-*` (API не умеет удалять папки).
-
-### Структура
 
 ```
 src/
-├── index.ts        # bootstrap: конфиг, регистрация инструментов, stdio-транспорт
-├── config.ts       # чтение и валидация env
-├── http.ts         # zephyrFetch(): auth, таймаут, ретраи, нормализация ошибок
-├── schemas.ts      # zod-схемы общих структур (Step, TestScript, поля результатов…)
-├── toolkit.ts      # defineTool(): strict-валидация, read-only guard, формат ответов
-├── runResults.ts   # чтение результатов цикла с fallback на плоский эндпоинт
+├── index.ts        # bootstrap: config, tool registration, stdio transport
+├── config.ts       # env validation
+├── http.ts         # fetch wrapper: auth, timeouts, retries, error normalization
+├── schemas.ts      # shared zod schemas (steps, scripts, result fields, TQL help)
+├── toolkit.ts      # defineTool(): strict input, read-only guard, response shaping
+├── runResults.ts   # results pagination with legacy fallback
 └── tools/          # testCases, folders, testRuns, testResults, testPlans,
                     # attachments, automation, runMaintenance, misc
-test/               # unit + contract (msw) + smoke.e2e
 ```
 
-## Фаза 3 (§7.6) — реализовано
+Stdout is reserved for the MCP protocol; all logging goes to stderr.
 
-- **Вложения**: `upload_attachment` / `list_attachments` / `delete_attachment`. Единая адресация: `target` = `test_case` | `test_run` | `test_result` (+ опциональный `stepIndex` для кейса и результата). Загрузка — multipart, файл читается с диска машины, где запущен MCP-сервер.
-- **Тест-планы**: полный CRUD + `search_test_plans` (TQL).
-- **Автоматизация**: `upload_automation_results` (zip с результатами в формате Zephyr), `upload_cucumber_results` (zip с Cucumber JSON), опционально `autoCreateTestCases`; `download_feature_files` выгружает zip с `.feature`-файлами BDD-кейсов в локальный файл.
-- **`recreate_test_run_with_items`** — обход неизменяемости циклов: читает исходный цикл, создаёт новый с изменённым составом (`addItems` / `removeTestCaseKeys`), заголовочные поля наследуются от исходного; `copyResults: true` переносит последние результаты item'ов (включая пошаговые `scriptResults`); исходный цикл удаляется **только** при явном `deleteOriginal: true` и никогда — если создание нового не удалось. Новый цикл получает **новый ключ**.
-- **Internal API** (за флагом `ZEPHYR_ALLOW_INTERNAL_API=true`): `get_folder_tree` — дерево папок проекта (`/rest/tests/1.0/project/{id}/foldertree/...`). Помечен `UNOFFICIAL`: вендор internal API не поддерживает, на другой версии плагина эндпоинт может отсутствовать или отличаться.
+## License
+
+[MIT](LICENSE)
