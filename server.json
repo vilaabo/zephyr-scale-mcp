@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.vilaabo/zephyr-scale-mcp",
-  "description": "Zephyr Scale test management on self-hosted Jira Server/DC: cases, cycles, executions, plans, attachments",
+  "description": "Zephyr Scale on self-hosted Jira Server/DC: test cases, cycles, executions, plans and attachments",
   "repository": {
     "url": "https://github.com/vilaabo/zephyr-scale-mcp",
     "source": "github"
