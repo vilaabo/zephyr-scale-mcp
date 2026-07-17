@@ -29,10 +29,14 @@ MCP-сервер (Model Context Protocol) для **Zephyr Scale** на self-host
 - Jira Server / Data Center с установленным плагином Zephyr Scale
 - Персональный токен Jira DC (PAT, Jira 8.14+) или логин/пароль
 
-## Установка и сборка
+## Установка
+
+Пакет опубликован в npm — клонировать репозиторий не нужно, в конфиге MCP-клиента достаточно `npx -y zephyr-scale-mcp` (см. раздел «Подключение»).
+
+Из исходников (для разработки):
 
 ```bash
-git clone <repo-url> zephyr-scale-mcp
+git clone https://github.com/vilaabo/zephyr-scale-mcp.git
 cd zephyr-scale-mcp
 npm install
 npm run build        # → dist/index.js
@@ -64,8 +68,8 @@ npm run build        # → dist/index.js
 {
   "mcpServers": {
     "zephyr-scale": {
-      "command": "node",
-      "args": ["/path/to/zephyr-scale-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "zephyr-scale-mcp"],
       "env": {
         "JIRA_BASE_URL": "https://jira.example.com",
         "JIRA_AUTH": "pat",
@@ -86,8 +90,10 @@ claude mcp add zephyr-scale \
   --env JIRA_PAT=<token> \
   --env ZEPHYR_DEFAULT_PROJECT_KEY=PROJ \
   --env ZEPHYR_ALLOW_INTERNAL_API=true \
-  -- node /path/to/zephyr-scale-mcp/dist/index.js
+  -- npx -y zephyr-scale-mcp
 ```
+
+(из исходников: замените `npx -y zephyr-scale-mcp` на `node /path/to/zephyr-scale-mcp/dist/index.js`)
 
 Проверка: попросите агента вызвать `health_check` — он должен вернуть `{ ok: true, jiraUser, baseUrl, zephyrPluginReachable }`.
 

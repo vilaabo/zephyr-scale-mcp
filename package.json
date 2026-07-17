@@ -1,7 +1,8 @@
 {
   "name": "zephyr-scale-mcp",
   "version": "0.1.0",
-  "description": "MCP server for Zephyr Scale (Jira Server / Data Center) REST API v1",
+  "description": "MCP server for Zephyr Scale on self-hosted Jira Server / Data Center: test cases, cycles, executions, plans, folders, attachments and automation via REST API v1",
+  "mcpName": "io.github.vilaabo/zephyr-scale-mcp",
   "type": "module",
   "bin": {
     "zephyr-scale-mcp": "dist/index.js"
@@ -18,7 +19,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "ZEPHYR_E2E=1 vitest run test/smoke.e2e.test.ts"
+    "smoke": "ZEPHYR_E2E=1 vitest run test/smoke.e2e.test.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "keywords": [
     "mcp",

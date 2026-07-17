@@ -1,0 +1,75 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.vilaabo/zephyr-scale-mcp",
+  "description": "Zephyr Scale test management on self-hosted Jira Server/DC: cases, cycles, executions, plans, attachments",
+  "repository": {
+    "url": "https://github.com/vilaabo/zephyr-scale-mcp",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "zephyr-scale-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "JIRA_BASE_URL",
+          "description": "Jira base URL without a trailing slash, e.g. https://jira.example.com",
+          "isRequired": true,
+          "isSecret": false
+        },
+        {
+          "name": "JIRA_PAT",
+          "description": "Jira Data Center Personal Access Token (used when JIRA_AUTH=pat, the default)",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "JIRA_AUTH",
+          "description": "Authentication mode: pat (default) or basic",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "JIRA_USERNAME",
+          "description": "Username for JIRA_AUTH=basic",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "JIRA_PASSWORD",
+          "description": "Password for JIRA_AUTH=basic",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "ZEPHYR_DEFAULT_PROJECT_KEY",
+          "description": "Project key used when a tool is called without projectKey",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "ZEPHYR_ALLOW_INTERNAL_API",
+          "description": "true registers UNOFFICIAL tools backed by the internal /rest/tests/1.0 API: folder tree, folder deletion, exact status names",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "ZEPHYR_READONLY",
+          "description": "true disables all write tools",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "JIRA_TLS_REJECT_UNAUTHORIZED",
+          "description": "false allows self-signed certificates (disables TLS verification)",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

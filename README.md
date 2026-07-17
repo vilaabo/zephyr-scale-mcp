@@ -22,14 +22,7 @@ Most Zephyr MCP servers target the Cloud API. If your Jira lives on-premise, you
 
 Requirements: Node.js ≥ 20, Jira Server/DC with the Zephyr Scale plugin, a [Personal Access Token](https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html) (Jira 8.14+) or username/password.
 
-```bash
-git clone https://github.com/vilaabo/zephyr-scale-mcp.git
-cd zephyr-scale-mcp
-npm install
-npm run build        # → dist/index.js
-```
-
-Wire it into **Claude Code**:
+No cloning needed — the package is on npm. Wire it into **Claude Code**:
 
 ```bash
 claude mcp add zephyr-scale \
@@ -37,7 +30,7 @@ claude mcp add zephyr-scale \
   --env JIRA_PAT=<personal access token> \
   --env ZEPHYR_DEFAULT_PROJECT_KEY=PROJ \
   --env ZEPHYR_ALLOW_INTERNAL_API=true \
-  -- node /path/to/zephyr-scale-mcp/dist/index.js
+  -- npx -y zephyr-scale-mcp
 ```
 
 or **Claude Desktop / any MCP client** (`claude_desktop_config.json` / `.mcp.json`):
@@ -46,8 +39,8 @@ or **Claude Desktop / any MCP client** (`claude_desktop_config.json` / `.mcp.jso
 {
   "mcpServers": {
     "zephyr-scale": {
-      "command": "node",
-      "args": ["/path/to/zephyr-scale-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "zephyr-scale-mcp"],
       "env": {
         "JIRA_BASE_URL": "https://jira.example.com",
         "JIRA_PAT": "<personal access token>",
@@ -58,6 +51,20 @@ or **Claude Desktop / any MCP client** (`claude_desktop_config.json` / `.mcp.jso
   }
 }
 ```
+
+<details>
+<summary>Running from source instead</summary>
+
+```bash
+git clone https://github.com/vilaabo/zephyr-scale-mcp.git
+cd zephyr-scale-mcp
+npm install
+npm run build        # → dist/index.js
+```
+
+Then use `"command": "node", "args": ["/path/to/zephyr-scale-mcp/dist/index.js"]` in the client config.
+
+</details>
 
 Then ask your agent to run `health_check` — it verifies connectivity, credentials and that the Zephyr plugin answers.
 
